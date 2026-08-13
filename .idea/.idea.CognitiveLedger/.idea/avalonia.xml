@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AvaloniaProject">
+    <option name="projectPerEditor">
+      <map>
+        <entry key="CognitiveLedger.Desktop/App.axaml" value="CognitiveLedger.Desktop/CognitiveLedger.Desktop.csproj" />
+        <entry key="CognitiveLedger.Desktop/Views/MainWindow.axaml" value="CognitiveLedger.Desktop/CognitiveLedger.Desktop.csproj" />
+        <entry key="CognitiveLedger.Desktop/Views/OllamaDownloadView.axaml" value="CognitiveLedger.Desktop/CognitiveLedger.Desktop.csproj" />
+      </map>
+    </option>
+  </component>
+</project>

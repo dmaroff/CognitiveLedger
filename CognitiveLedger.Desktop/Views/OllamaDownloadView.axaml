@@ -1,0 +1,44 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CognitiveLedger.Desktop.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="480" d:DesignHeight="160"
+        x:Class="CognitiveLedger.Desktop.Views.OllamaDownloadView"
+        x:DataType="vm:OllamaDownloadViewModel"
+        Title="Installing AI"
+        Width="480" Height="160"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+    <Design.DataContext>
+        <!-- This only sets the DataContext for the previewer in an IDE,
+             to set the actual DataContext for runtime, set the DataContext property in code. -->
+        <vm:OllamaDownloadViewModel />
+    </Design.DataContext>
+
+    <Grid Margin="24" RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,Auto">
+        <ProgressBar Grid.Row="0" Grid.Column="0"
+                     Minimum="0" Maximum="100"
+                     Value="{Binding PercentageCompleted}"
+                     VerticalAlignment="Center"
+                     Margin="0,0,12,0" />
+        <Button Grid.Row="0" Grid.Column="1"
+                Content="Cancel"
+                Command="{Binding CancelCommand}"
+                Click="OnCancelClick" />
+
+        <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                   Text="{Binding StatusText}"
+                   Foreground="Gray"
+                   Margin="0,8,0,0" />
+
+        <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                   Text="{Binding ErrorMessage}"
+                   Foreground="Red"
+                   Margin="0,8,0,0"
+                   IsVisible="{Binding HasError}" />
+    </Grid>
+
+</Window>
