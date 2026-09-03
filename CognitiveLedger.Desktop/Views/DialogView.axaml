@@ -1,0 +1,53 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CognitiveLedger.Desktop.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="420" d:DesignHeight="160"
+        x:Class="CognitiveLedger.Desktop.Views.DialogView"
+        x:DataType="vm:DialogViewModel"
+        Title="{Binding WindowTitle}"
+        Width="420" SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+    <Design.DataContext>
+        <!-- This only sets the DataContext for the previewer in an IDE,
+             to set the actual DataContext for runtime, set the DataContext property in code. -->
+        <vm:DialogViewModel />
+    </Design.DataContext>
+
+    <Grid Margin="24" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*">
+        <TextBlock Grid.Row="0" Grid.Column="0"
+                   Text="{Binding IconGlyph}"
+                   Foreground="{Binding IconBrush}"
+                   FontSize="28"
+                   FontWeight="Bold"
+                   VerticalAlignment="Top"
+                   Margin="0,0,16,0" />
+
+        <TextBlock Grid.Row="0" Grid.Column="1"
+                   Text="{Binding Message}"
+                   TextWrapping="Wrap"
+                   VerticalAlignment="Center" />
+
+        <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,20,0,0">
+            <Button Content="Abort"
+                    Command="{Binding AbortCommand}"
+                    IsVisible="{Binding IsAbortVisible}" />
+            <Button Content="Cancel"
+                    Command="{Binding CancelCommand}"
+                    IsVisible="{Binding IsCancelVisible}" />
+            <Button Content="OK"
+                    Command="{Binding OkCommand}"
+                    IsVisible="{Binding IsOkVisible}"
+                    IsDefault="True" />
+        </StackPanel>
+    </Grid>
+
+</Window>

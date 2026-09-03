@@ -1,10 +1,17 @@
 ﻿using Avalonia;
 using System;
 using System.Threading.Tasks;
+using CognitiveLedger.AI.AIPlatform;
+using CognitiveLedger.AI.Analyzers;
+using CognitiveLedger.AI.Identifiers;
+using CognitiveLedger.AI.Services.Ollama;
 using CognitiveLedger.AI.Services.Ollama.DependencyInjection;
+using CognitiveLedger.Desktop.Helpers;
 using CognitiveLedger.Desktop.ViewModels;
+using CognitiveLedger.Parser.PDF;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 
 namespace CognitiveLedger.Desktop;
 
@@ -22,10 +29,21 @@ sealed class Program
             {
                 services.AddCognitiveLedgerOllama(options =>
                 {
-                    options.ModelName = "llama3.1";
+                    options.ModelName = "qwen3:8b";
                 });
                 services.AddSingleton<MainViewModel>();
                 services.AddTransient<OllamaDownloadViewModel>();
+                //services.AddTransient<IPdfTextExtractor, PdfTextExtractor>();
+                services.AddSingleton<IAiPlatform>(sp =>
+                {
+                    var options = sp.GetRequiredService<IOptions<OllamaServiceOptions>>().Value;
+                    return new OllamaPlatform(options.Host, options.Port);
+                });
+                services.AddTransient<IStatementAnalyzerFactory, StatementAnalyzerFactory>();
+                services.AddTransient<IBankIdentifier, BankIdentifier>();
+                
+                // Bank Analyzers
+                services.AddKeyedTransient<IStatementAnalyzer, AmazonSynchronyBankAnalyzer>("SynchronyBank");
             })
             .Build();
 

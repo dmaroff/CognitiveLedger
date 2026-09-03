@@ -25,5 +25,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\CognitiveLedger.AI.Services.Ollama\CognitiveLedger.AI.Services.Ollama.csproj"/>
+        <ProjectReference Include="..\CognitiveLedger.AI\CognitiveLedger.AI.csproj" />
+        <ProjectReference Include="..\CognitiveLedger.Parser.PDF\CognitiveLedger.Parser.PDF.csproj" />
     </ItemGroup>
 </Project>

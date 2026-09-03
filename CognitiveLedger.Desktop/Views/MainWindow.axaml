@@ -27,17 +27,19 @@
                     Orientation="Vertical"
                     Spacing="4"
                     Margin="8"
-                    HorizontalAlignment="Center"
-                    IsVisible="{Binding !IsAiReady}">
+                    HorizontalAlignment="Center">
+
             <Button Content="Install AI"
                     Command="{Binding InstallAiCommand}"
                     IsVisible="{Binding !IsAiInstalled}"
                     HorizontalAlignment="Center" />
-        </StackPanel>
 
-        <TextBox Text="{Binding Greeting}"
-                 HorizontalAlignment="Center"
-                 VerticalAlignment="Center" />
+            <Button Content="Read Statement"
+                    Command="{Binding ReadStatementCommand}"
+                    IsVisible="{Binding IsAiReady}"
+                    HorizontalAlignment="Center" />
+        </StackPanel>
+        
     </DockPanel>
 
 </Window>

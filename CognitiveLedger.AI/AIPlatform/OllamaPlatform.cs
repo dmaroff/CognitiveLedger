@@ -31,6 +31,12 @@ public class OllamaPlatform : PlatformBase, IAiPlatform
                 ? throw new AiGenerateException("Failed to retrieve response from Ollama platform")
                 : response;
         }
+        catch (OperationCanceledException)
+        {
+            // Let callers distinguish "timed out" from "actually failed" via their own
+            // catch (OperationCanceledException) instead of masking it as an AiGenerateException.
+            throw;
+        }
         catch (Exception ex)
         {
             throw new AiGenerateException(ex);
