@@ -1,8 +1,10 @@
 <Solution>
   <Project Path="CognitiveLedger.AI/CognitiveLedger.AI.csproj" />
+  <Folder Name="/Testing/">
+    <Project Path="CognitiveLedger.UnitTests/CognitiveLedger.UnitTests.csproj" />
+  </Folder>
   <Project Path="CognitiveLedger.AI.Services.Ollama/CognitiveLedger.AI.Services.Ollama.csproj" />
   <Project Path="CognitiveLedger.Common/CognitiveLedger.Common.csproj" />
   <Project Path="CognitiveLedger.Data/CognitiveLedger.Data.csproj" />
-  <Project Path="CognitiveLedger.Desktop/CognitiveLedger.Desktop.csproj" />
   <Project Path="CognitiveLedger.Parser.PDF/CognitiveLedger.Parser.PDF.csproj" />
 </Solution>

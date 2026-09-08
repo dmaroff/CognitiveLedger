@@ -4,6 +4,9 @@ using CognitiveLedger.Parser.PDF.Interfaces;
 using CognitiveLedger.Parser.PDF.Request;
 using CognitiveLedger.Parser.PDF.Response;
 using CognitiveLedger.Parser.PDF.Types;
+using System.Security.Cryptography;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CognitiveLedger.Parser.PDF;
 
@@ -16,11 +19,15 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
     private readonly IPdfTextExtractor _pdfTextExtractor;
     private readonly IPiiDetector _piiDetector;
     private readonly IPdfRedactor _pdfRedactor;
+    private readonly IPdfRasterizer _pdfRasterizer;
+    private readonly ILogger<PdfPiiSanitizer> _logger;
 
     public PdfPiiSanitizer(
         IPdfTextExtractor pdfTextExtractor,
         IPiiDetector piiDetector,
-        IPdfRedactor pdfRedactor)
+        IPdfRedactor pdfRedactor,
+        IPdfRasterizer pdfRasterizer,
+        ILogger<PdfPiiSanitizer>? logger = null)
     {
         _pdfTextExtractor = pdfTextExtractor
             ?? throw new ArgumentNullException(nameof(pdfTextExtractor));
@@ -30,12 +37,18 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
 
         _pdfRedactor = pdfRedactor
             ?? throw new ArgumentNullException(nameof(pdfRedactor));
+
+        _pdfRasterizer = pdfRasterizer
+            ?? throw new ArgumentNullException(nameof(pdfRasterizer));
+
+        _logger = logger ?? NullLogger<PdfPiiSanitizer>.Instance;
     }
 
     public Task<SanitizePiiResponse> SanitizePiiAsync(
         SanitizePiiRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var operation = TimedLogOperation.Start(_logger, nameof(SanitizePiiAsync));
         ValidateRequest(request);
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -48,21 +61,34 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var piiDetection = _piiDetector.DetectPii(
-            new DetectPiiRequest
+        var detectRequest = new DetectPiiRequest
+        {
+            PdfText = extractedText
+        };
+
+        var piiDetectionItems = request.PiiValues.Count > 0
+            ? _piiDetector.DetectPii2(new DetectPii2Request
             {
-                PdfText = extractedText
-            });
+                FullText = extractedText.FullText,
+                PiiValues = request.PiiValues
+            }).PiiItems
+            : _piiDetector.DetectPii(detectRequest).PiiItems;
+
+        var piiDetection = new DetectPiiResponse
+        {
+            PiiItems = piiDetectionItems
+        };
+
+        _logger.LogInformation(
+            "PII detection completed with {PiiItemCount} items",
+            piiDetection.PiiItems.Count);
 
         if (!piiDetection.PiiDetected)
         {
-            return Task.FromResult(
-                new SanitizePiiResponse
-                {
-                    PdfData = request.PdfData,
-                    PiiStatus = PiiDetectionStatus.NotDetected,
-                    PiiItems = []
-                });
+            return Task.FromResult(CreateRasterizedResponse(
+                request.PdfData,
+                PiiDetectionStatus.NotDetected,
+                []));
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -90,13 +116,36 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        return Task.FromResult(
-            new SanitizePiiResponse
-            {
-                PdfData = redactionResponse.PdfData,
-                PiiStatus = PiiDetectionStatus.DetectedAndRemoved,
-                PiiItems = piiDetection.PiiItems
-            });
+        return Task.FromResult(CreateRasterizedResponse(
+            redactionResponse.PdfData,
+            PiiDetectionStatus.DetectedAndRemoved,
+            piiDetection.PiiItems));
+    }
+
+    private SanitizePiiResponse CreateRasterizedResponse(
+        byte[] verifiedPdfData,
+        PiiDetectionStatus piiStatus,
+        IReadOnlyList<PiiItem> piiItems)
+    {
+        using var operation = TimedLogOperation.Start(_logger, nameof(CreateRasterizedResponse));
+        var rasterized = _pdfRasterizer.RasterizePdf(
+            new RasterizePdfRequest { PdfData = verifiedPdfData });
+
+        if (rasterized.PdfData is null || rasterized.PdfData.Length == 0)
+        {
+            throw new PdfPiiRedactionException(
+                "The PDF rasterizer returned an empty document.");
+        }
+
+        return new SanitizePiiResponse
+        {
+            RasterizedPdfData = rasterized.PdfData,
+            PageCount = rasterized.PageCount,
+            RasterizationDpi = rasterized.Dpi,
+            Sha256Hash = Convert.ToHexString(SHA256.HashData(rasterized.PdfData)),
+            PiiStatus = piiStatus,
+            PiiItems = piiItems
+        };
     }
 
     private static void ValidateRequest(SanitizePiiRequest request)

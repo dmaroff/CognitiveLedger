@@ -3,14 +3,24 @@ using CognitiveLedger.Parser.PDF.Dtos;
 using CognitiveLedger.Parser.PDF.Interfaces;
 using CognitiveLedger.Parser.PDF.Request;
 using CognitiveLedger.Parser.PDF.Response;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using UglyToad.PdfPig;
 
 namespace CognitiveLedger.Parser.PDF;
 
 public sealed class PdfPigTextExtractor : IPdfTextExtractor
 {
+    private readonly ILogger<PdfPigTextExtractor> _logger;
+
+    public PdfPigTextExtractor(ILogger<PdfPigTextExtractor>? logger = null)
+    {
+        _logger = logger ?? NullLogger<PdfPigTextExtractor>.Instance;
+    }
+
     public ExtractPdfTextResponse ExtractPdfText( ExtractPdfTextRequest request)
     {
+        using var operation = TimedLogOperation.Start(_logger, nameof(ExtractPdfText));
         ArgumentNullException.ThrowIfNull(request);
 
         if (request.PdfData is null)
@@ -33,7 +43,12 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
 
         using var document = PdfDocument.Open(stream);
 
-        return ExtractText(document);
+        var response = ExtractText(document);
+        _logger.LogInformation(
+            "Extracted {TextItemCount} text items from {PdfByteCount} PDF bytes",
+            response.TextItems.Count,
+            request.PdfData.Length);
+        return response;
     }
 
     private static ExtractPdfTextResponse ExtractText(PdfDocument document)
@@ -74,22 +89,12 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
             // left to right.
             //
             var lines = words
-                .GroupBy(
-                    word =>
-                        Math.Round(
-                            word.BoundingBox.Bottom / 3) * 3)
+                .GroupBy(word => Math.Round(word.BoundingBox.Bottom / 3) * 3)
                 .OrderByDescending(line => line.Key)
-                .Select(
-                    line =>
-                        string.Join(
-                            " ",
-                            line
-                                .OrderBy(
-                                    word =>
-                                        word.BoundingBox.Left)
-                                .Select(
-                                    word =>
-                                        word.Text)));
+                .Select(line =>
+                    string.Join(" ", line
+                        .OrderBy(word => word.BoundingBox.Left)
+                        .Select(word => word.Text)));
 
             foreach (var line in lines)
             {

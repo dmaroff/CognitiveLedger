@@ -9,9 +9,16 @@ namespace CognitiveLedger.Parser.PDF.Response;
 public sealed class SanitizePiiResponse
 {
     /// <summary>
-    /// Sanitized PDF data, or the original data when no PII was detected.
+    /// Image-only PDF data created after redaction verification. This is the
+    /// artifact that can be previewed and submitted to an external LLM.
     /// </summary>
-    public required byte[] PdfData { get; init; }
+    public required byte[] RasterizedPdfData { get; init; }
+
+    public required int PageCount { get; init; }
+
+    public required int RasterizationDpi { get; init; }
+
+    public required string Sha256Hash { get; init; }
 
     /// <summary>
     /// Indicates whether PII was detected and removed.

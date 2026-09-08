@@ -5,13 +5,23 @@ using CognitiveLedger.Parser.PDF.Response;
 using iText.Kernel.Pdf;
 using iText.PdfCleanup;
 using iText.PdfCleanup.Autosweep;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CognitiveLedger.Parser.PDF;
 
 public sealed class TextPdfRedactor : IPdfRedactor
 {
+    private readonly ILogger<TextPdfRedactor> _logger;
+
+    public TextPdfRedactor(ILogger<TextPdfRedactor>? logger = null)
+    {
+        _logger = logger ?? NullLogger<TextPdfRedactor>.Instance;
+    }
+
     public RedactPdfResponse RedactPdf(RedactPdfRequest request)
     {
+        using var operation = TimedLogOperation.Start(_logger, nameof(RedactPdf));
         ArgumentNullException.ThrowIfNull(request);
 
         if (request.PdfData.Length == 0)
@@ -29,10 +39,8 @@ public sealed class TextPdfRedactor : IPdfRedactor
             {
                 continue;
             }
-
-            strategy.Add(
-                new RegexBasedCleanupStrategy(
-                    Regex.Escape(piiItem.Value)));
+            var escapedValue = Regex.Escape(piiItem.Value);
+            strategy.Add(new RegexBasedCleanupStrategy($"(?i:{escapedValue})"));
         }
 
         using var inputStream =
@@ -50,9 +58,15 @@ public sealed class TextPdfRedactor : IPdfRedactor
                 strategy);
         }
 
-        return new RedactPdfResponse
+        var response = new RedactPdfResponse
         {
             PdfData = outputStream.ToArray()
         };
+
+        _logger.LogInformation(
+            "Redacted {PiiItemCount} PII items; output contains {PdfByteCount} bytes",
+            request.PiiItems.Count,
+            response.PdfData.Length);
+        return response;
     }
 }
