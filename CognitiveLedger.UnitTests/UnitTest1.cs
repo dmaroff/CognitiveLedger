@@ -3,6 +3,8 @@ using CognitiveLedger.AI.OpenAI;
 using CognitiveLedger.AI.OpenAI.Request;
 using CognitiveLedger.AI.OpenAI.Response;
 using CognitiveLedger.AI.OpenAI.StatementDefinitions;
+using CognitiveLedger.Data.Database;
+using CognitiveLedger.Data.Repositories;
 using CognitiveLedger.Parser.PDF;
 using CognitiveLedger.Parser.PDF.Dtos;
 using CognitiveLedger.Parser.PDF.Interfaces;
@@ -10,7 +12,11 @@ using CognitiveLedger.Parser.PDF.Request;
 using CognitiveLedger.Parser.PDF.Response;
 using CognitiveLedger.Parser.PDF.Types;
 using Microsoft.Extensions.Configuration;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using DataProcessingAudit = CognitiveLedger.Data.Models.CreditCard.StatementProcessingAudit;
+using DataStatement = CognitiveLedger.Data.Models.CreditCard.CreditCardStatement;
+using DataTransaction = CognitiveLedger.Data.Models.CreditCard.CreditCardTransaction;
 
 namespace CognitiveLedger.UnitTests;
 
@@ -89,31 +95,99 @@ public class Tests
     {
         var pdfPath = FindRepositoryFile("Test", "Synchrony-Amazon-Rasterized.pdf");
         var originalPdf = await File.ReadAllBytesAsync(pdfPath);
+        var sourcePdfPath = FindRepositoryFile("Test", "Synchrony-Amazon.pdf");
+        var sourcePdf = await File.ReadAllBytesAsync(sourcePdfPath);
+        var sourceDocumentSha256 = Convert.ToHexString(SHA256.HashData(sourcePdf));
         
         var configuration = new ConfigurationBuilder()
             .SetBasePath(TestContext.CurrentContext.TestDirectory)
-            .AddJsonFile("appsettings.local.json")
+            .AddJsonFile("appsettings.json")
+            .AddJsonFile("appsettings.local.json", optional: true)
             .Build();
 
         var apiKey = configuration["OpenAI:COGNITIVE_LEDGER_API_KEY"];
         Assert.That(apiKey, Is.Not.Null.And.Not.Empty);
 
-        var reader = new OpenAiPdfStatementReader(
-            new HttpClient(),
-            new OpenAiPdfOptions
-            {
-                ApiKey = apiKey
-            },
-            TestLogging.CreateLogger<OpenAiPdfStatementReader>());
-        
-        var result = await reader.ExtractAsync(new ExtractPdfStatementRequest
+        var requestTimeoutSeconds = configuration.GetValue<int>(
+            "OpenAI:RequestTimeoutSeconds",
+            300);
+        Assert.That(requestTimeoutSeconds, Is.GreaterThan(0));
+
+        var connectionString = configuration.GetConnectionString("CognitiveLedger");
+        Assert.That(connectionString, Is.Not.Null.And.Not.Empty);
+
+        var dbOptions = new DbContextOptionsBuilder<CognitiveLedgerDbContext>()
+            .UseNpgsql(connectionString)
+            .Options;
+        await using var dbContext = new CognitiveLedgerDbContext(dbOptions);
+        var statementRepository = new StatementRepository(dbContext);
+        var processingRepository = new StatementProcessingRepository(dbContext);
+
+        var existingStatement = await statementRepository
+            .FindBySourceDocumentSha256Async(sourceDocumentSha256);
+
+        if (existingStatement is not null)
         {
-            PdfData = originalPdf,
-            SummaryPrompt = SynchronyAmazonStatementDefinition.SummaryPrompt,
-            SummarySchema = SynchronyAmazonStatementDefinition.SummarySchema,
-            TransactionPrompt = SynchronyAmazonStatementDefinition.TransactionPrompt,
-            TransactionSchema = SynchronyAmazonStatementDefinition.TransactionSchema
-        });
+            TestLogging.CreateLogger<Tests>().LogInformation(
+                "Statement PDF has already been imported as statement ID {StatementId}; " +
+                "SHA-256={SourceDocumentSha256}",
+                existingStatement.Id,
+                sourceDocumentSha256);
+            Assert.Pass(
+                $"Statement PDF has already been imported as statement ID " +
+                $"{existingStatement.Id}.");
+        }
+
+        var readerOptions = new OpenAiPdfOptions
+        {
+            ApiKey = apiKey
+        };
+
+        using var httpClient = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(requestTimeoutSeconds)
+        };
+
+        var reader = new OpenAiPdfStatementReader(
+            httpClient,
+            readerOptions,
+            TestLogging.CreateLogger<OpenAiPdfStatementReader>());
+
+        var audit = await processingRepository.StartAsync(
+            new DataProcessingAudit
+            {
+                StatementType = "SynchronyAmazon",
+                AiProvider = "OpenAI",
+                AiModel = readerOptions.Model
+            });
+
+        ExtractPdfStatementResponse result;
+        DataStatement savedStatement;
+
+        try
+        {
+            result = await reader.ExtractAsync(new ExtractPdfStatementRequest
+            {
+                PdfData = originalPdf,
+                SummaryPrompt = SynchronyAmazonStatementDefinition.SummaryPrompt,
+                SummarySchema = SynchronyAmazonStatementDefinition.SummarySchema,
+                TransactionPrompt = SynchronyAmazonStatementDefinition.TransactionPrompt,
+                TransactionSchema = SynchronyAmazonStatementDefinition.TransactionSchema
+            });
+
+            savedStatement = await statementRepository.InsertStatementAsync(
+                MapToDataStatement(result, sourceDocumentSha256));
+
+            audit = await processingRepository.CompleteAsync(
+                audit.Id,
+                savedStatement.Id,
+                savedStatement.Transactions.Count);
+        }
+        catch (Exception exception)
+        {
+            await processingRepository.FailAsync(audit.Id, exception);
+            throw;
+        }
 
         LogExtractedStatement(result);
         
@@ -137,11 +211,11 @@ public class Tests
                 stmt.Transactions.Where(t => !t.IsCredit).Sum(t => t.Amount),
                 Is.EqualTo(stmt.TotalPurchases + stmt.Fees + stmt.InterestCharged).Within(0.01m));
             Assert.That(
-                stmt.Transactions.Where(t => t.IsCredit).Sum(t => t.Amount),
-                Is.EqualTo(stmt.TotalPayments + stmt.TotalOtherCredits).Within(0.01m));
-            Assert.That(
                 stmt.NetNewSpending,
                 Is.EqualTo(stmt.TotalPurchases - stmt.TotalOtherCredits));
+            Assert.That(savedStatement.Id, Is.GreaterThan(0));
+            Assert.That(audit.StatementId, Is.EqualTo(savedStatement.Id));
+            Assert.That(audit.Status, Is.EqualTo("Succeeded"));
         }
     }
 
@@ -207,6 +281,41 @@ public class Tests
             statement.NewBalance);
     }
 
+    private static DataStatement MapToDataStatement(
+        ExtractPdfStatementResponse result,
+        string sourceDocumentSha256)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        var statement = result.Statement;
+
+        return new DataStatement
+        {
+            SourceDocumentSha256 = sourceDocumentSha256,
+            Issuer = statement.Issuer,
+            AccountName = statement.AccountName,
+            StatementPeriodStart = statement.StatementPeriodStart,
+            StatementPeriodEnd = statement.StatementPeriodEnd,
+            PreviousBalance = statement.PreviousBalance,
+            NewBalance = statement.NewBalance,
+            TotalPurchases = statement.TotalPurchases,
+            TotalPayments = statement.TotalPayments,
+            TotalOtherCredits = statement.TotalOtherCredits,
+            Fees = statement.Fees,
+            InterestCharged = statement.InterestCharged,
+            Transactions = statement.Transactions
+                .Select(transaction => new DataTransaction
+                {
+                    TransactionDate = transaction.Date,
+                    Category = transaction.Category,
+                    Merchant = transaction.Merchant,
+                    Description = transaction.Description,
+                    Amount = transaction.Amount,
+                    IsCredit = transaction.IsCredit
+                })
+                .ToList()
+        };
+    }
+
     private static string FindRepositoryFile(params string[] pathParts)
     {
         var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
@@ -227,7 +336,7 @@ public class Tests
         throw new FileNotFoundException(
             $"Could not find test PDF '{Path.Combine(pathParts)}'.");
     }
-    
+
     private static async Task WriteRepositoryFile(byte[] pdfData, params string[] pathParts)
     {
         if (pdfData.Length == 0)

@@ -3,6 +3,7 @@ using System;
 using CognitiveLedger.Data.Database;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CognitiveLedger.Data.Database.Migrations
 {
     [DbContext(typeof(CognitiveLedgerDbContext))]
-    partial class CognitiveLedgerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260914235323_AddStatementSourceDocumentHash")]
+    partial class AddStatementSourceDocumentHash
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -26,46 +29,37 @@ namespace CognitiveLedger.Data.Database.Migrations
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
+                        .HasColumnType("bigint");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
                     b.Property<string>("AccountName")
                         .IsRequired()
                         .HasMaxLength(300)
-                        .HasColumnType("character varying(300)")
-                        .HasColumnName("account_name");
+                        .HasColumnType("character varying(300)");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at_utc");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("CreatedBy")
-                        .HasColumnType("text")
-                        .HasColumnName("created_by");
+                        .HasColumnType("text");
 
                     b.Property<decimal>("Fees")
-                        .HasColumnType("numeric")
-                        .HasColumnName("fees");
+                        .HasColumnType("numeric");
 
                     b.Property<decimal>("InterestCharged")
-                        .HasColumnType("numeric")
-                        .HasColumnName("interest_charged");
+                        .HasColumnType("numeric");
 
                     b.Property<string>("Issuer")
                         .IsRequired()
                         .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("issuer");
+                        .HasColumnType("character varying(200)");
 
                     b.Property<decimal>("NewBalance")
-                        .HasColumnType("numeric")
-                        .HasColumnName("new_balance");
+                        .HasColumnType("numeric");
 
                     b.Property<decimal>("PreviousBalance")
-                        .HasColumnType("numeric")
-                        .HasColumnName("previous_balance");
+                        .HasColumnType("numeric");
 
                     b.Property<string>("SourceDocumentSha256")
                         .HasMaxLength(64)
@@ -73,32 +67,25 @@ namespace CognitiveLedger.Data.Database.Migrations
                         .HasColumnName("source_document_sha256");
 
                     b.Property<DateOnly>("StatementPeriodEnd")
-                        .HasColumnType("date")
-                        .HasColumnName("statement_period_end");
+                        .HasColumnType("date");
 
                     b.Property<DateOnly>("StatementPeriodStart")
-                        .HasColumnType("date")
-                        .HasColumnName("statement_period_start");
+                        .HasColumnType("date");
 
                     b.Property<decimal>("TotalOtherCredits")
-                        .HasColumnType("numeric")
-                        .HasColumnName("total_other_credits");
+                        .HasColumnType("numeric");
 
                     b.Property<decimal>("TotalPayments")
-                        .HasColumnType("numeric")
-                        .HasColumnName("total_payments");
+                        .HasColumnType("numeric");
 
                     b.Property<decimal>("TotalPurchases")
-                        .HasColumnType("numeric")
-                        .HasColumnName("total_purchases");
+                        .HasColumnType("numeric");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at_utc");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("UpdatedBy")
-                        .HasColumnType("text")
-                        .HasColumnName("updated_by");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -115,64 +102,51 @@ namespace CognitiveLedger.Data.Database.Migrations
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
+                        .HasColumnType("bigint");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
                     b.Property<decimal>("Amount")
-                        .HasColumnType("numeric")
-                        .HasColumnName("amount");
+                        .HasColumnType("numeric");
 
                     b.Property<string>("Category")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("category");
+                        .HasColumnType("character varying(100)");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at_utc");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("CreatedBy")
-                        .HasColumnType("text")
-                        .HasColumnName("created_by");
+                        .HasColumnType("text");
 
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)")
-                        .HasColumnName("description");
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<bool>("IsCredit")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_credit");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Merchant")
                         .IsRequired()
                         .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("merchant");
+                        .HasColumnType("character varying(500)");
 
                     b.Property<int>("Sequence")
-                        .HasColumnType("integer")
-                        .HasColumnName("sequence");
+                        .HasColumnType("integer");
 
                     b.Property<long>("StatementId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("statement_id");
+                        .HasColumnType("bigint");
 
                     b.Property<DateOnly?>("TransactionDate")
-                        .HasColumnType("date")
-                        .HasColumnName("transaction_date");
+                        .HasColumnType("date");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at_utc");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("UpdatedBy")
-                        .HasColumnType("text")
-                        .HasColumnName("updated_by");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -186,87 +160,69 @@ namespace CognitiveLedger.Data.Database.Migrations
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
+                        .HasColumnType("bigint");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
                     b.Property<string>("AiModel")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("ai_model");
+                        .HasColumnType("character varying(100)");
 
                     b.Property<string>("AiProvider")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("ai_provider");
+                        .HasColumnType("character varying(100)");
 
                     b.Property<DateTime?>("CompletedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("completed_at_utc");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("CorrectedRowCount")
-                        .HasColumnType("integer")
-                        .HasColumnName("corrected_row_count");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at_utc");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("CreatedBy")
-                        .HasColumnType("text")
-                        .HasColumnName("created_by");
+                        .HasColumnType("text");
 
                     b.Property<long?>("DurationMilliseconds")
-                        .HasColumnType("bigint")
-                        .HasColumnName("duration_milliseconds");
+                        .HasColumnType("bigint");
 
                     b.Property<string>("ErrorMessage")
                         .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)")
-                        .HasColumnName("error_message");
+                        .HasColumnType("character varying(4000)");
 
                     b.Property<int?>("ExtractedTransactionCount")
-                        .HasColumnType("integer")
-                        .HasColumnName("extracted_transaction_count");
+                        .HasColumnType("integer");
 
                     b.Property<int>("IgnoredRowCount")
-                        .HasColumnType("integer")
-                        .HasColumnName("ignored_row_count");
+                        .HasColumnType("integer");
 
                     b.Property<int?>("PageCount")
-                        .HasColumnType("integer")
-                        .HasColumnName("page_count");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("StartedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("started_at_utc");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<long?>("StatementId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("statement_id");
+                        .HasColumnType("bigint");
 
                     b.Property<string>("StatementType")
                         .IsRequired()
                         .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("statement_type");
+                        .HasColumnType("character varying(100)");
 
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("status");
+                        .HasColumnType("character varying(50)");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at_utc");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("UpdatedBy")
-                        .HasColumnType("text")
-                        .HasColumnName("updated_by");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 

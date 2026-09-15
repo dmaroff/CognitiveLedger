@@ -14,9 +14,9 @@
         <PackageReference Include="NUnit" Version="4.3.2"/>
         <PackageReference Include="NUnit.Analyzers" Version="4.7.0"/>
         <PackageReference Include="NUnit3TestAdapter" Version="5.0.0"/>
-        <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.0" />
-        <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="10.0.0" />
-        <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.0" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.11" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="10.0.11" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.11" />
         <PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
         <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     </ItemGroup>
@@ -27,6 +27,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\CognitiveLedger.AI\CognitiveLedger.AI.csproj" />
+        <ProjectReference Include="..\CognitiveLedger.Data\CognitiveLedger.Data.csproj" />
         <ProjectReference Include="..\CognitiveLedger.Parser.PDF\CognitiveLedger.Parser.PDF.csproj" />
     </ItemGroup>
 

@@ -33,7 +33,10 @@ public static class SynchronyAmazonStatementDefinition
         "the balance; otherwise set it to false. Return a transaction date as a complete ISO " +
         "YYYY-MM-DD date only when it can be determined unambiguously from the page and supplied " +
         "statement period; otherwise return null. Return an empty array if this page has no " +
-        "transaction rows.";
+        "transaction rows. A later page may continue the transaction table without repeating " +
+        "the section or column headings; extract every visible ledger row on such continuation " +
+        "pages and do not return an empty array merely because headings are absent. Verify each " +
+        "amount digit by digit, especially small statement credits.";
 
     public static object SummarySchema { get; } = new
     {

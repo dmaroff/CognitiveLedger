@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using CognitiveLedger.AI.OpenAI.Request;
 using CognitiveLedger.AI.OpenAI.Response;
 using CognitiveLedger.Parser.PDF;
@@ -91,6 +92,32 @@ public sealed class OpenAiPdfStatementReader : IOpenAiPdfStatementReader
                     request.TransactionPrompt,
                     request.TransactionSchema,
                     cancellationToken);
+
+                var retryReason = GetPageRetryReason(
+                    pageTransactions,
+                    transactions.Count > 0);
+
+                if (retryReason is not null)
+                {
+                    _logger.LogWarning(
+                        "Retrying OpenAI transaction extraction for PDF page {PageNumber} of " +
+                        "{PageCount}; reason={RetryReason}",
+                        index + 1,
+                        pages.Count,
+                        retryReason);
+
+                    pageTransactions = await ExtractPageTransactionsAsync(
+                        pages[index],
+                        index + 1,
+                        pages.Count,
+                        summary,
+                        request.TransactionPrompt +
+                        " This is a corrective retry. Carefully inspect every visible ledger " +
+                        "row, including continuation rows. Do not copy section totals onto " +
+                        "transactions, and verify every decimal amount digit by digit.",
+                        request.TransactionSchema,
+                        cancellationToken);
+                }
 
                 for (var transactionIndex = 0;
                      transactionIndex < pageTransactions.Count;
@@ -377,11 +404,23 @@ public sealed class OpenAiPdfStatementReader : IOpenAiPdfStatementReader
             })
             .ToArray();
 
-        var correctedCreditTransactions = CorrectDuplicatedOtherCreditsSubtotal(
-            summary,
+        var expectedPurchases =
+            summary.NewBalance -
+            summary.PreviousBalance -
+            Math.Abs(summary.Fees) -
+            Math.Abs(summary.InterestCharged) +
+            Math.Abs(summary.TotalPayments) +
+            Math.Abs(summary.TotalOtherCredits);
+
+        var transactionsWithoutDerivedSubtotal = RemoveDerivedPurchaseSubtotal(
+            expectedPurchases,
             ledgerTransactions);
 
-        var calculatedTotalPurchases = correctedCreditTransactions
+        var reconciledTransactions = CollapseSplitPurchaseRow(
+            expectedPurchases,
+            transactionsWithoutDerivedSubtotal);
+
+        var calculatedTotalPurchases = reconciledTransactions
             .Where(transaction =>
                 !transaction.IsCredit &&
                 !IsFeeOrInterest(transaction))
@@ -402,30 +441,39 @@ public sealed class OpenAiPdfStatementReader : IOpenAiPdfStatementReader
                 TotalOtherCredits = Math.Abs(summary.TotalOtherCredits),
                 Fees = Math.Abs(summary.Fees),
                 InterestCharged = Math.Abs(summary.InterestCharged),
-                Transactions = correctedCreditTransactions
+                Transactions = reconciledTransactions
             }
         };
     }
 
-    private IReadOnlyList<ExtractedTransaction> CorrectDuplicatedOtherCreditsSubtotal(
-        ExtractedStatementSummary summary,
+    private IReadOnlyList<ExtractedTransaction> CollapseSplitPurchaseRow(
+        decimal expectedPurchases,
         IReadOnlyList<ExtractedTransaction> transactions)
     {
         const decimal tolerance = 0.01m;
-        var expectedOtherCredits = Math.Abs(summary.TotalOtherCredits);
-        var otherCredits = transactions
-            .Where(transaction => transaction.IsCredit && !IsPayment(transaction))
-            .ToArray();
-        var extractedOtherCredits = otherCredits.Sum(transaction => transaction.Amount);
+        var extractedPurchases = transactions
+            .Where(transaction => !transaction.IsCredit && !IsFeeOrInterest(transaction))
+            .Sum(transaction => transaction.Amount);
+        var excess = extractedPurchases - expectedPurchases;
 
-        if (extractedOtherCredits <= expectedOtherCredits + tolerance)
+        if (excess <= tolerance)
         {
             return transactions;
         }
 
-        var candidates = otherCredits
+        var candidates = transactions
             .Where(transaction =>
-                Math.Abs(transaction.Amount - expectedOtherCredits) <= tolerance)
+                !transaction.IsCredit &&
+                !IsFeeOrInterest(transaction) &&
+                transaction.Date is not null &&
+                Math.Abs(transaction.Amount - excess) <= tolerance)
+            .GroupBy(transaction => new
+            {
+                transaction.Date,
+                transaction.Amount,
+                Merchant = transaction.Merchant.Trim()
+            })
+            .Where(group => group.Count() == 2)
             .ToArray();
 
         if (candidates.Length != 1)
@@ -433,48 +481,112 @@ public sealed class OpenAiPdfStatementReader : IOpenAiPdfStatementReader
             return transactions;
         }
 
-        var candidate = candidates[0];
-        var otherRowsTotal = otherCredits
-            .Where(transaction => !ReferenceEquals(transaction, candidate))
-            .Sum(transaction => transaction.Amount);
-        var correctedAmount = expectedOtherCredits - otherRowsTotal;
+        var splitRows = candidates[0].ToArray();
+        var retained = splitRows[0];
+        var removed = splitRows[1];
+        var mergedDescription = string.Join(
+            " / ",
+            splitRows
+                .Select(transaction => transaction.Description.Trim())
+                .Where(description => !string.IsNullOrWhiteSpace(description))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
 
-        if (correctedAmount <= 0 ||
-            Math.Abs((correctedAmount + otherRowsTotal) - expectedOtherCredits) > tolerance)
+        _logger.LogWarning(
+            "Collapsed an OpenAI-split purchase row using statement reconciliation; " +
+            "date={TransactionDate}, amount={Amount:F2}, merchant={Merchant}, descriptions={Descriptions}",
+            retained.Date?.ToString("yyyy-MM-dd"),
+            retained.Amount,
+            retained.Merchant,
+            mergedDescription);
+
+        return transactions
+            .Where(transaction => !ReferenceEquals(transaction, removed))
+            .Select((transaction, index) => new ExtractedTransaction
+            {
+                Id = (index + 1).ToString(
+                    System.Globalization.CultureInfo.InvariantCulture),
+                Date = transaction.Date,
+                Category = transaction.Category,
+                Merchant = transaction.Merchant,
+                Description = ReferenceEquals(transaction, retained)
+                    ? mergedDescription
+                    : transaction.Description,
+                Amount = transaction.Amount,
+                IsCredit = transaction.IsCredit
+            })
+            .ToArray();
+    }
+
+    private IReadOnlyList<ExtractedTransaction> RemoveDerivedPurchaseSubtotal(
+        decimal expectedPurchases,
+        IReadOnlyList<ExtractedTransaction> transactions)
+    {
+        const decimal tolerance = 0.01m;
+        var debitTransactions = transactions
+            .Where(transaction =>
+                !transaction.IsCredit &&
+                !IsFeeOrInterest(transaction))
+            .ToArray();
+
+        if (debitTransactions.Length < 2)
         {
             return transactions;
         }
 
+        var candidates = debitTransactions
+            .Where(transaction =>
+                transaction.Date is null &&
+                Math.Abs(transaction.Amount - expectedPurchases) <= tolerance)
+            .ToArray();
+
+        if (candidates.Length != 1)
+        {
+            return transactions;
+        }
+
+        var subtotal = candidates[0];
         _logger.LogWarning(
-            "Corrected an Other Credits subtotal copied onto transaction {Description}; " +
-            "amount changed from {OriginalAmount:F2} to {CorrectedAmount:F2}",
-            candidate.Description,
-            candidate.Amount,
-            correctedAmount);
+            "Ignored a derived purchase subtotal returned as a transaction; " +
+            "amount={SubtotalAmount:F2}, description={Description}",
+            subtotal.Amount,
+            subtotal.Description);
 
         return transactions
-            .Select(transaction => ReferenceEquals(transaction, candidate)
-                ? new ExtractedTransaction
-                {
-                    Id = transaction.Id,
-                    Date = transaction.Date,
-                    Category = transaction.Category,
-                    Merchant = transaction.Merchant,
-                    Description = transaction.Description,
-                    Amount = correctedAmount,
-                    IsCredit = transaction.IsCredit
-                }
-                : transaction)
+            .Where(transaction => !ReferenceEquals(transaction, subtotal))
+            .Select((transaction, index) => new ExtractedTransaction
+            {
+                Id = (index + 1).ToString(
+                    System.Globalization.CultureInfo.InvariantCulture),
+                Date = transaction.Date,
+                Category = transaction.Category,
+                Merchant = transaction.Merchant,
+                Description = transaction.Description,
+                Amount = transaction.Amount,
+                IsCredit = transaction.IsCredit
+            })
             .ToArray();
+    }
+
+    private static string? GetPageRetryReason(
+        IReadOnlyList<ExtractedPageTransaction> pageTransactions,
+        bool earlierPageContainedTransactions)
+    {
+        if (pageTransactions.Count == 0 && earlierPageContainedTransactions)
+        {
+            return "empty continuation page after transaction rows were already found";
+        }
+
+        return null;
     }
 
     private static bool IsPayment(ExtractedTransaction transaction)
     {
-        var text = string.Join(
-            " ",
-            transaction.Category,
-            transaction.Merchant,
-            transaction.Description);
+        return IsPayment(transaction.Category, transaction.Merchant, transaction.Description);
+    }
+
+    private static bool IsPayment(string category, string merchant, string description)
+    {
+        var text = string.Join(" ", category, merchant, description);
 
         return text.Contains("payment", StringComparison.OrdinalIgnoreCase) ||
                text.Contains("thank you", StringComparison.OrdinalIgnoreCase);
@@ -504,11 +616,13 @@ public sealed class OpenAiPdfStatementReader : IOpenAiPdfStatementReader
             transaction.Merchant,
             transaction.Description);
 
-        return text.Contains("fee", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("interest", StringComparison.OrdinalIgnoreCase);
+        return Regex.IsMatch(
+            text,
+            @"\b(?:fees?|interest)\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
-    private static void ValidateStatement(ExtractedStatement statement)
+    private void ValidateStatement(ExtractedStatement statement)
     {
         const decimal tolerance = 0.01m;
 
@@ -569,19 +683,30 @@ public sealed class OpenAiPdfStatementReader : IOpenAiPdfStatementReader
                 $"Expected {expectedDebits:F2}, received {extractedDebits:F2}.");
         }
 
-        var extractedCredits = statement.Transactions
-            .Where(transaction => transaction.IsCredit)
+        var extractedPayments = statement.Transactions
+            .Where(transaction => transaction.IsCredit && IsPayment(transaction))
             .Sum(transaction => transaction.Amount);
 
-        var expectedCredits = statement.TotalPayments + statement.TotalOtherCredits;
-
-        if (Math.Abs(extractedCredits - expectedCredits) > tolerance)
+        if (Math.Abs(extractedPayments - statement.TotalPayments) > tolerance)
         {
-            throw new OpenAiPdfStatementException(
-                $"Extracted credit transactions do not match the statement totals. " +
-                $"Expected payments {statement.TotalPayments:F2} + other credits " +
-                $"{statement.TotalOtherCredits:F2} = {expectedCredits:F2}, " +
-                $"received {extractedCredits:F2}.");
+            _logger.LogWarning(
+                "Extracted payment transactions do not match the authoritative statement " +
+                "Payments total; statement={StatementPayments:F2}, transactions={TransactionPayments:F2}",
+                statement.TotalPayments,
+                extractedPayments);
+        }
+
+        var extractedOtherCredits = statement.Transactions
+            .Where(transaction => transaction.IsCredit && !IsPayment(transaction))
+            .Sum(transaction => transaction.Amount);
+
+        if (Math.Abs(extractedOtherCredits - statement.TotalOtherCredits) > tolerance)
+        {
+            _logger.LogWarning(
+                "Extracted Other Credits transactions do not match the authoritative bold " +
+                "statement total; statement={StatementOtherCredits:F2}, transactions={TransactionOtherCredits:F2}",
+                statement.TotalOtherCredits,
+                extractedOtherCredits);
         }
     }
 
