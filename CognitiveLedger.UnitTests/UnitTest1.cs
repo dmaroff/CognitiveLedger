@@ -3,6 +3,7 @@ using CognitiveLedger.AI.OpenAI;
 using CognitiveLedger.AI.OpenAI.Request;
 using CognitiveLedger.AI.OpenAI.Response;
 using CognitiveLedger.AI.OpenAI.StatementDefinitions;
+using CognitiveLedger.Common;
 using CognitiveLedger.Data.Database;
 using CognitiveLedger.Data.Repositories;
 using CognitiveLedger.Parser.PDF;
@@ -99,25 +100,17 @@ public class Tests
         var sourcePdf = await File.ReadAllBytesAsync(sourcePdfPath);
         var sourceDocumentSha256 = Convert.ToHexString(SHA256.HashData(sourcePdf));
         
-        var configuration = new ConfigurationBuilder()
-            .SetBasePath(TestContext.CurrentContext.TestDirectory)
-            .AddJsonFile("appsettings.json")
-            .AddJsonFile("appsettings.local.json", optional: true)
-            .Build();
-
-        var apiKey = configuration["OpenAI:COGNITIVE_LEDGER_API_KEY"];
+        IAppConfiguration config = new AppConfiguration();
+        var apiKey = config.AiApiKey;
         Assert.That(apiKey, Is.Not.Null.And.Not.Empty);
 
-        var requestTimeoutSeconds = configuration.GetValue<int>(
-            "OpenAI:RequestTimeoutSeconds",
-            300);
+        var requestTimeoutSeconds = config.AiRequestTimeoutSeconds;
         Assert.That(requestTimeoutSeconds, Is.GreaterThan(0));
-
-        var connectionString = configuration.GetConnectionString("CognitiveLedger");
-        Assert.That(connectionString, Is.Not.Null.And.Not.Empty);
+        
+        Assert.That(config.ConnectionString, Is.Not.Null.And.Not.Empty);
 
         var dbOptions = new DbContextOptionsBuilder<CognitiveLedgerDbContext>()
-            .UseNpgsql(connectionString)
+            .UseNpgsql(config.ConnectionString)
             .Options;
         await using var dbContext = new CognitiveLedgerDbContext(dbOptions);
         var statementRepository = new StatementRepository(dbContext);
@@ -138,19 +131,12 @@ public class Tests
                 $"{existingStatement.Id}.");
         }
 
-        var readerOptions = new OpenAiPdfOptions
-        {
-            ApiKey = apiKey
-        };
-
-        using var httpClient = new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(requestTimeoutSeconds)
-        };
+        using var httpClient = new HttpClient();
+        httpClient.Timeout = TimeSpan.FromSeconds(requestTimeoutSeconds);
 
         var reader = new OpenAiPdfStatementReader(
             httpClient,
-            readerOptions,
+            config,
             TestLogging.CreateLogger<OpenAiPdfStatementReader>());
 
         var audit = await processingRepository.StartAsync(
@@ -158,7 +144,7 @@ public class Tests
             {
                 StatementType = "SynchronyAmazon",
                 AiProvider = "OpenAI",
-                AiModel = readerOptions.Model
+                AiModel = config.AiModel
             });
 
         ExtractPdfStatementResponse result;
@@ -166,13 +152,9 @@ public class Tests
 
         try
         {
-            result = await reader.ExtractAsync(new ExtractPdfStatementRequest
+            result = await reader.ExtractAsync(new SynchronyAmazonStatementRequest
             {
-                PdfData = originalPdf,
-                SummaryPrompt = SynchronyAmazonStatementDefinition.SummaryPrompt,
-                SummarySchema = SynchronyAmazonStatementDefinition.SummarySchema,
-                TransactionPrompt = SynchronyAmazonStatementDefinition.TransactionPrompt,
-                TransactionSchema = SynchronyAmazonStatementDefinition.TransactionSchema
+                PdfData = originalPdf
             });
 
             savedStatement = await statementRepository.InsertStatementAsync(

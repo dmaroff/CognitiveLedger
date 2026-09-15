@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\CognitiveLedger.AI\CognitiveLedger.AI.csproj" />
+        <ProjectReference Include="..\CognitiveLedger.Common\CognitiveLedger.Common.csproj"/>
+        <ProjectReference Include="..\CognitiveLedger.Data\CognitiveLedger.Data.csproj"/>
+        <ProjectReference Include="..\CognitiveLedger.Parser.PDF\CognitiveLedger.Parser.PDF.csproj"/>
+    </ItemGroup>
+
+</Project>

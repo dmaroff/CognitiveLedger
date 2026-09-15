@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using CognitiveLedger.AI.OpenAI.Request;
 using CognitiveLedger.AI.OpenAI.Response;
+using CognitiveLedger.Common;
 using CognitiveLedger.Parser.PDF;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,31 +18,31 @@ public sealed class OpenAiPdfStatementReader : IOpenAiPdfStatementReader
         new(JsonSerializerDefaults.Web);
 
     private readonly HttpClient _httpClient;
-    private readonly OpenAiPdfOptions _options;
+    private readonly IAppConfiguration _config;
     private readonly ILogger<OpenAiPdfStatementReader> _logger;
 
     public OpenAiPdfStatementReader(
         HttpClient httpClient,
-        OpenAiPdfOptions options,
+        IAppConfiguration config,
         ILogger<OpenAiPdfStatementReader>? logger = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-        _options = options ?? throw new ArgumentNullException(nameof(options));
+        _config = config;
         _logger = logger ?? NullLogger<OpenAiPdfStatementReader>.Instance;
 
-        if (string.IsNullOrWhiteSpace(options.ApiKey))
+        if (string.IsNullOrWhiteSpace(_config.AiApiKey))
         {
-            throw new ArgumentException("An OpenAI API key is required.", nameof(options));
+            throw new ArgumentException("An OpenAI API key is required.", nameof(_config));
         }
 
-        if (string.IsNullOrWhiteSpace(options.Model))
+        if (string.IsNullOrWhiteSpace(_config.AiModel))
         {
-            throw new ArgumentException("An OpenAI model is required.", nameof(options));
+            throw new ArgumentException("An OpenAI model is required.", nameof(_config));
         }
     }
 
     public async Task<ExtractPdfStatementResponse> ExtractAsync(
-        ExtractPdfStatementRequest request,
+        IExtractPdfStatementRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -258,7 +259,7 @@ public sealed class OpenAiPdfStatementReader : IOpenAiPdfStatementReader
     {
         var apiRequest = new
         {
-            model = _options.Model,
+            model = _config.AiModel,
             store = false,
             input = new[]
             {
@@ -293,15 +294,15 @@ public sealed class OpenAiPdfStatementReader : IOpenAiPdfStatementReader
             }
         };
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.Endpoint);
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _config.AiEndpoint);
         httpRequest.Content = JsonContent.Create(apiRequest, options: SerializerOptions);
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.AiApiKey);
 
         var stopwatch = Stopwatch.StartNew();
         _logger.LogInformation(
             "Starting OpenAI request {SchemaName} using model {Model} with {PdfByteCount} PDF bytes",
             schemaName,
-            _options.Model,
+            _config.AiModel,
             pdfData.Length);
 
         try

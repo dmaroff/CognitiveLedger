@@ -1,8 +1,7 @@
-using System.Linq;
 using System.Text.Json;
 using CognitiveLedger.AI.AIPlatform;
-using CognitiveLedger.AI.Analyzers;
 using CognitiveLedger.AI.Analyzers.Prompts;
+using CognitiveLedger.Common.Response;
 
 namespace CognitiveLedger.AI.Identifiers;
 
@@ -66,7 +65,7 @@ public class BankIdentifier : IBankIdentifier
     {
         var response = new IdentifyBankResponse
         {
-            Status = ResponseStatus.Failure
+            Status = ResponseStatus.Failed
         };
 
         using var tokenSource = new CancellationTokenSource(_timeout);

@@ -2,21 +2,10 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using CognitiveLedger.AI.AIPlatform;
 using CognitiveLedger.AI.Analyzers.Prompts;
+using CognitiveLedger.Common.Response;
 using CognitiveLedger.Common.Types;
 
 namespace CognitiveLedger.AI.Analyzers;
-
-public enum ResponseStatus
-{
-    Success,
-    Failure,
-    Timeout
-}
-
-public abstract class ResponseBase
-{
-    public required ResponseStatus Status { get; set; }
-}
 
 public class AnalyzeStatementResponse : ResponseBase
 {
@@ -161,7 +150,7 @@ public class AmazonSynchronyBankAnalyzer : IStatementAnalyzer
     {
         var response = new AnalyzeStatementResponse
         {
-            Status = ResponseStatus.Failure,
+            Status = ResponseStatus.Failed,
             CreditCardStatement = new CreditCardStatementDto()
         };
 

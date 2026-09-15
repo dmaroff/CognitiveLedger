@@ -1,5 +1,8 @@
 <Solution>
   <Project Path="CognitiveLedger.AI/CognitiveLedger.AI.csproj" />
+  <Folder Name="/Services/">
+    <Project Path="CognitiveLedger.Services.Importer/CognitiveLedger.Services.Importer.csproj" />
+  </Folder>
   <Folder Name="/Testing/">
     <Project Path="CognitiveLedger.UnitTests/CognitiveLedger.UnitTests.csproj" />
   </Folder>

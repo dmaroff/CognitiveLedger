@@ -6,6 +6,6 @@ namespace CognitiveLedger.AI.OpenAI;
 public interface IOpenAiPdfStatementReader
 {
     Task<ExtractPdfStatementResponse> ExtractAsync(
-        ExtractPdfStatementRequest request,
+        IExtractPdfStatementRequest request,
         CancellationToken cancellationToken = default);
 }

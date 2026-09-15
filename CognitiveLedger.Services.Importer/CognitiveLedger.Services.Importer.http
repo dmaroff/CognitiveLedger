@@ -1,0 +1,14 @@
+@CognitiveLedger.Services.Importer_HostAddress = http://localhost:5025
+
+POST {{CognitiveLedger.Services.Importer_HostAddress}}/api/parse/pdf
+Content-Type: application/json
+
+{
+  "base64PdfData": "REPLACE_WITH_BASE64_PDF",
+  "fileName": "statement.pdf",
+  "bankName": "Example Bank",
+  "statementType": "CreditCard",
+  "piiToRedact": []
+}
+
+###
