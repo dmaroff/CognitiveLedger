@@ -1,17 +1,11 @@
 using iText.Kernel.Pdf;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CognitiveLedger.Parser.PDF;
 
 public static class PdfPageSplitter
 {
-    public static IReadOnlyList<byte[]> SplitPages(
-        byte[] pdfData,
-        ILogger? logger = null)
+    public static IReadOnlyList<byte[]> SplitPages(byte[] pdfData)
     {
-        logger ??= NullLogger.Instance;
-        using var operation = TimedLogOperation.Start(logger, nameof(SplitPages));
         ArgumentNullException.ThrowIfNull(pdfData);
 
         if (pdfData.Length == 0)
@@ -26,19 +20,12 @@ public static class PdfPageSplitter
         for (var pageNumber = 1; pageNumber <= sourceDocument.GetNumberOfPages(); pageNumber++)
         {
             using var outputStream = new MemoryStream();
-
             using (var pageDocument = new PdfDocument(new PdfWriter(outputStream)))
             {
                 sourceDocument.CopyPagesTo(pageNumber, pageNumber, pageDocument);
             }
-
             pages.Add(outputStream.ToArray());
         }
-
-        logger.LogInformation(
-            "Split PDF containing {PdfByteCount} bytes into {PageCount} pages",
-            pdfData.Length,
-            pages.Count);
         return pages;
     }
 }

@@ -38,11 +38,10 @@ public sealed class ImportController(IImportService importService) : ControllerB
             ModelState.AddModelError(nameof(request.StatementType), "A valid statement type is required.");
             return ValidationProblem(ModelState);
         }
-
-        byte[] pdfData;
+        
         try
         {
-            pdfData = Convert.FromBase64String(request.Base64PdfData);
+            _ = Convert.FromBase64String(request.Base64PdfData);
         }
         catch (FormatException)
         {
@@ -50,15 +49,8 @@ public sealed class ImportController(IImportService importService) : ControllerB
             return ValidationProblem(ModelState);
         }
 
-        var result = await importService.ImportAsync(new ImportRequest
-        {
-            FileType = ImportFileType.Pdf,
-            FileData = pdfData,
-            FileName = request.FileName,
-            SourceName = request.BankName,
-            StatementType = request.StatementType,
-            PiiToRedact = request.PiiToRedact
-        }, cancellationToken);
+        var importRequest = (ImportRequest)request;
+        var result = await importService.ImportAsync(importRequest, cancellationToken);
 
         var response = new ImportPdfResponse
         {

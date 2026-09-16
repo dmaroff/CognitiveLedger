@@ -1,3 +1,4 @@
+using CognitiveLedger.Common;
 using CognitiveLedger.Parser.PDF.Interfaces;
 using CognitiveLedger.Parser.PDF.Request;
 using CognitiveLedger.Parser.PDF.Response;
@@ -19,16 +20,15 @@ namespace CognitiveLedger.Parser.PDF;
 /// </summary>
 public sealed class PdfRasterizer : IPdfRasterizer
 {
-    private readonly ILogger<PdfRasterizer> _logger;
+    private readonly AppLog<PdfRasterizer> _logger;
 
-    public PdfRasterizer(ILogger<PdfRasterizer>? logger = null)
+    public PdfRasterizer(AppLog<PdfRasterizer> logger)
     {
-        _logger = logger ?? NullLogger<PdfRasterizer>.Instance;
+        _logger = logger;
     }
 
     public RasterizePdfResponse RasterizePdf(RasterizePdfRequest request)
     {
-        using var operation = TimedLogOperation.Start(_logger, nameof(RasterizePdf));
         ArgumentNullException.ThrowIfNull(request);
 
         if (request.PdfData is null || request.PdfData.Length == 0)
@@ -90,12 +90,10 @@ public sealed class PdfRasterizer : IPdfRasterizer
             PageCount = pageCount,
             Dpi = request.Dpi
         };
-
-        _logger.LogInformation(
-            "Rasterized {PageCount} pages at {Dpi} DPI into {PdfByteCount} bytes",
-            response.PageCount,
-            response.Dpi,
-            response.PdfData.Length);
+        
+        _logger.LogInfo(
+            $"Rasterized {response.PageCount} pages at {response.Dpi} DPI into {response.PdfData.Length} bytes");
+        
         return response;
     }
 }

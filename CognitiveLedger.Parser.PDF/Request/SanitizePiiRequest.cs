@@ -1,9 +1,11 @@
+using CognitiveLedger.Common.Request;
+
 namespace CognitiveLedger.Parser.PDF.Request;
 
 /// <summary>
 /// Requests complete PII sanitization of a PDF document.
 /// </summary>
-public sealed class SanitizePiiRequest
+public sealed class SanitizePiiRequest : RequestBase
 {
     /// <summary>
     /// Original PDF data to inspect and sanitize.

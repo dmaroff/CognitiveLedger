@@ -4,6 +4,7 @@
     <Project Path="CognitiveLedger.Services.Importer/CognitiveLedger.Services.Importer.csproj" />
   </Folder>
   <Folder Name="/Testing/">
+    <Project Path="CognitiveLedger.TestApp/CognitiveLedger.TestApp.csproj" />
     <Project Path="CognitiveLedger.UnitTests/CognitiveLedger.UnitTests.csproj" />
   </Folder>
   <Project Path="CognitiveLedger.AI.Services.Ollama/CognitiveLedger.AI.Services.Ollama.csproj" />

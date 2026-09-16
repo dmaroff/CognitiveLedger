@@ -4,9 +4,8 @@ using CognitiveLedger.Parser.PDF.Interfaces;
 using CognitiveLedger.Parser.PDF.Request;
 using CognitiveLedger.Parser.PDF.Response;
 using CognitiveLedger.Parser.PDF.Types;
+using CognitiveLedger.Common;
 using System.Security.Cryptography;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CognitiveLedger.Parser.PDF;
 
@@ -20,14 +19,14 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
     private readonly IPiiDetector _piiDetector;
     private readonly IPdfRedactor _pdfRedactor;
     private readonly IPdfRasterizer _pdfRasterizer;
-    private readonly ILogger<PdfPiiSanitizer> _logger;
+    private readonly AppLog<PdfPiiSanitizer> _logger;
 
     public PdfPiiSanitizer(
         IPdfTextExtractor pdfTextExtractor,
         IPiiDetector piiDetector,
         IPdfRedactor pdfRedactor,
         IPdfRasterizer pdfRasterizer,
-        ILogger<PdfPiiSanitizer>? logger = null)
+        AppLog<PdfPiiSanitizer> logger)
     {
         _pdfTextExtractor = pdfTextExtractor
             ?? throw new ArgumentNullException(nameof(pdfTextExtractor));
@@ -41,14 +40,14 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
         _pdfRasterizer = pdfRasterizer
             ?? throw new ArgumentNullException(nameof(pdfRasterizer));
 
-        _logger = logger ?? NullLogger<PdfPiiSanitizer>.Instance;
+        _logger = logger;
     }
 
     public Task<SanitizePiiResponse> SanitizePiiAsync(
         SanitizePiiRequest request,
         CancellationToken cancellationToken = default)
     {
-        using var operation = TimedLogOperation.Start(_logger, nameof(SanitizePiiAsync));
+        _logger.LogMethodStart();
         ValidateRequest(request);
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -56,6 +55,7 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
         var extractedText = _pdfTextExtractor.ExtractPdfText(
             new ExtractPdfTextRequest
             {
+                UserId = request.UserId,
                 PdfData = request.PdfData
             });
 
@@ -79,9 +79,7 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
             PiiItems = piiDetectionItems
         };
 
-        _logger.LogInformation(
-            "PII detection completed with {PiiItemCount} items",
-            piiDetection.PiiItems.Count);
+        _logger.LogInfo($"PII detection completed with {piiDetection.PiiItems.Count} items");
 
         if (!piiDetection.PiiDetected)
         {
@@ -107,6 +105,7 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
         var verificationText = _pdfTextExtractor.ExtractPdfText(
             new ExtractPdfTextRequest
             {
+                UserId = request.UserId,
                 PdfData = redactionResponse.PdfData
             });
 
@@ -116,6 +115,7 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
 
         cancellationToken.ThrowIfCancellationRequested();
 
+        _logger.LogMethodEnd();
         return Task.FromResult(CreateRasterizedResponse(
             redactionResponse.PdfData,
             PiiDetectionStatus.DetectedAndRemoved,
@@ -127,7 +127,7 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
         PiiDetectionStatus piiStatus,
         IReadOnlyList<PiiItem> piiItems)
     {
-        using var operation = TimedLogOperation.Start(_logger, nameof(CreateRasterizedResponse));
+        _logger.LogMethodStart();
         var rasterized = _pdfRasterizer.RasterizePdf(
             new RasterizePdfRequest { PdfData = verifiedPdfData });
 
@@ -137,6 +137,7 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
                 "The PDF rasterizer returned an empty document.");
         }
 
+        _logger.LogMethodEnd();
         return new SanitizePiiResponse
         {
             RasterizedPdfData = rasterized.PdfData,

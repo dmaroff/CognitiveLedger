@@ -21,7 +21,6 @@ public sealed class TextPdfRedactor : IPdfRedactor
 
     public RedactPdfResponse RedactPdf(RedactPdfRequest request)
     {
-        using var operation = TimedLogOperation.Start(_logger, nameof(RedactPdf));
         ArgumentNullException.ThrowIfNull(request);
 
         if (request.PdfData.Length == 0)

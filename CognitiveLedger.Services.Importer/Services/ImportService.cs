@@ -8,9 +8,7 @@ using CognitiveLedger.Data.Repositories;
 using CognitiveLedger.Data.Models.CreditCard;
 using CognitiveLedger.Parser.PDF;
 using CognitiveLedger.Parser.PDF.Interfaces;
-using CognitiveLedger.Parser.PDF.Request;
 using CognitiveLedger.Parser.PDF.Response;
-using CognitiveLedger.Parser.PDF.Types;
 using CognitiveLedger.Services.Importer.Request;
 using CognitiveLedger.Services.Importer.Response;
 
@@ -25,7 +23,8 @@ public sealed class ImportService : IImportService
     private readonly IPiiSanitizer _piiSanitizer;
     private readonly IOpenAiPdfStatementReader _statementReader;
     private readonly IAppConfiguration _config;
-    private readonly ILogger<ImportService> _logger;
+    private readonly ILocalQueueService _localQueueService;
+    private readonly AppLog<ImportService> _logger;
 
     public ImportService(
         IPdfTextExtractor extractor,
@@ -34,7 +33,8 @@ public sealed class ImportService : IImportService
         IStatementRepository statementRepository,
         IStatementProcessingRepository processingRepository,
         IAppConfiguration config,
-        ILogger<ImportService> logger)
+        ILocalQueueService localQueueService,
+        AppLog<ImportService> logger)
     {
         _extractor = extractor;
         _piiSanitizer = piiSanitizer;
@@ -42,6 +42,7 @@ public sealed class ImportService : IImportService
         _statementRepository = statementRepository;
         _processingRepository = processingRepository;
         _config = config;
+        _localQueueService = localQueueService;
         _logger = logger;
     }
     
@@ -49,40 +50,34 @@ public sealed class ImportService : IImportService
         ImportRequest request,
         CancellationToken cancellationToken = default)
     {
+        _logger.LogMethodStart(request);
         ValidateRequest(request);
         cancellationToken.ThrowIfCancellationRequested();
-
-        var jobId = Guid.NewGuid();
+        
         var sourceDocumentSha256 = Convert.ToHexString(SHA256.HashData(request.FileData));
-
-        _logger.LogInformation(
-            "Import job {JobId} received a {FileType} document",
-            jobId,
-            request.FileType);
 
         return request.FileType switch
         {
             ImportFileType.Pdf => await ImportPdfAsync(
-                request, jobId, sourceDocumentSha256, cancellationToken),
+                request, sourceDocumentSha256, cancellationToken),
+            
             ImportFileType.Csv or ImportFileType.Jpeg => NotConfigured(
-                jobId,
                 "FILE_TYPE_NOT_CONFIGURED",
                 $"{request.FileType} imports are not configured yet."),
+            
             _ => throw new ArgumentOutOfRangeException(
-                nameof(request.FileType), request.FileType, "Unsupported import file type.")
+                nameof(request), request.FileType, "Unsupported import file type.")
         };
     }
 
     private async Task<ImportResponse> ImportPdfAsync(
         ImportRequest request,
-        Guid jobId,
         string sourceDocumentSha256,
         CancellationToken cancellationToken)
     {
         if (request.StatementType != StatementType.CreditCard)
         {
             return NotConfigured(
-                jobId,
                 "STATEMENT_TYPE_NOT_CONFIGURED",
                 $"{request.StatementType} PDF imports are not configured yet.");
         }
@@ -109,39 +104,8 @@ public sealed class ImportService : IImportService
             _config.AiModel,
             cancellationToken);
         
-        var sanitizePiiResponse = await SanitizePdfAsync(request, cancellationToken);
-        
-        if (sanitizePiiResponse.PiiStatus == PiiDetectionStatus.DetectedAndRemoved)
-        {
-            _logger.LogInformation(
-                "Import job {JobId} detected and removed {PiiItemCount} PII items from the PDF",
-                jobId,
-                sanitizePiiResponse.PiiItems.Count);
-        }
-        else
-        {
-            _logger.LogInformation(
-                "Import job {JobId} did not detect any PII items in the PDF",
-                jobId);
-        }
-
-        var statementResponse = await ReadStatementAsync(requestTimeoutSeconds, sanitizePiiResponse);
-        if (statementResponse.Status != ResponseStatus.Success)
-        {
-            return Failed(statementResponse);
-        }
-        
-        var savedStatement = await PersistStatementAsync(
-                MapToCreditCardStatement(statementResponse, sourceDocumentSha256),
-                cancellationToken);
-        
-        await CompleteProcessingAuditAsync(
-            audit.Id,
-            savedStatement.Id,
-            savedStatement.Transactions.Count,
-            cancellationToken);
-        
-        return Success(savedStatement.Id);
+        _localQueueService.Enqueue(request, audit.Id);
+        return Success(audit.Id);
     }
 
     private async Task<ExtractPdfStatementResponse> ReadStatementAsync(
@@ -179,17 +143,6 @@ public sealed class ImportService : IImportService
         }
     }
 
-    // These stage adapters are ready for the source-specific PDF parser workflow.
-    // They are not invoked until extraction and validation are connected.
-    private Task<SanitizePiiResponse> SanitizePdfAsync(
-        ImportRequest request,
-        CancellationToken cancellationToken) =>
-        _piiSanitizer.SanitizePiiAsync(new SanitizePiiRequest
-        {
-            PdfData = request.FileData,
-            PiiValues = request.PiiToRedact
-        }, cancellationToken);
-
     private Task<StatementProcessingAudit> StartProcessingAuditAsync(
         string parserName,
         string aiProvider,
@@ -202,43 +155,13 @@ public sealed class ImportService : IImportService
             AiModel = aiModel
         }, cancellationToken);
 
-    private Task<CreditCardStatement> PersistStatementAsync(
-        CreditCardStatement statement,
-        CancellationToken cancellationToken) =>
-        _statementRepository.InsertStatementAsync(statement, cancellationToken);
-
-    private Task<StatementProcessingAudit> CompleteProcessingAuditAsync(
-        long auditId,
-        long statementId,
-        int transactionCount,
-        CancellationToken cancellationToken) =>
-        _processingRepository.CompleteAsync(
-            auditId, statementId, transactionCount,
-            cancellationToken: cancellationToken);
-
-    private Task<StatementProcessingAudit> FailProcessingAuditAsync(
-        long auditId,
-        Exception exception,
-        CancellationToken cancellationToken) =>
-        _processingRepository.FailAsync(
-            auditId, exception,
-            cancellationToken: cancellationToken);
-
     private static ImportResponse NotConfigured(
-        Guid jobId,
         string errorCode,
         string errorMessage) => new()
     {
         Status = ResponseStatus.Failed,
         ErrorCode = errorCode,
         ErrorMessage = errorMessage
-    };
-    
-    private static ImportResponse Failed(ExtractPdfStatementResponse response) => new()
-    {
-        Status = ResponseStatus.Failed,
-        ErrorCode = response.ErrorCode,
-        ErrorMessage = response.ErrorMessage
     };
     
     private static ImportResponse Existing(long statementId) => new()
@@ -283,39 +206,5 @@ public sealed class ImportService : IImportService
         {
             throw new ArgumentException("A supported statement type is required.", nameof(request));
         }
-    }
-    
-    private static CreditCardStatement MapToCreditCardStatement(
-        ExtractPdfStatementResponse result,
-        string sourceDocumentSha256)
-    {
-        ArgumentNullException.ThrowIfNull(result);
-        var statement = result.Statement!;
-
-        return new CreditCardStatement
-        {
-            SourceDocumentSha256 = sourceDocumentSha256,
-            Issuer = statement.Issuer,
-            AccountName = statement.AccountName,
-            StatementPeriodStart = statement.StatementPeriodStart,
-            StatementPeriodEnd = statement.StatementPeriodEnd,
-            PreviousBalance = statement.PreviousBalance,
-            NewBalance = statement.NewBalance,
-            TotalPurchases = statement.TotalPurchases,
-            TotalPayments = statement.TotalPayments,
-            TotalOtherCredits = statement.TotalOtherCredits,
-            Fees = statement.Fees,
-            InterestCharged = statement.InterestCharged,
-            Transactions = [ .. statement.Transactions
-                .Select(transaction => new CreditCardTransaction
-                {
-                    TransactionDate = transaction.Date,
-                    Category = transaction.Category,
-                    Merchant = transaction.Merchant,
-                    Description = transaction.Description,
-                    Amount = transaction.Amount,
-                    IsCredit = transaction.IsCredit
-                })]
-        };
     }
 }

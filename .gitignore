@@ -3,7 +3,10 @@ obj/
 /packages/
 riderModule.iml
 /_ReSharper.Caches/
+logs/
 CognitiveLedger.sln.DotSettings.user
 appsettings.local.json
 appsettings.Development.json
 .idea/
+.DS_Store
+CognitiveLedger.Services.Importer/.DS_Store

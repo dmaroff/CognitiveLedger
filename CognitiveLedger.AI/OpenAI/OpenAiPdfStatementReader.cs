@@ -78,7 +78,7 @@ public sealed class OpenAiPdfStatementReader : IOpenAiPdfStatementReader
                 request.SummaryPrompt,
                 request.SummarySchema,
                 cancellationToken);
-            var pages = PdfPageSplitter.SplitPages(request.PdfData, _logger);
+            var pages = PdfPageSplitter.SplitPages(request.PdfData);
             var transactions = new List<ExtractedPageTransaction>();
 
             for (var index = 0; index < pages.Count; index++)

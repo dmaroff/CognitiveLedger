@@ -1,26 +1,25 @@
 using System.Text;
+using CognitiveLedger.Common;
 using CognitiveLedger.Parser.PDF.Dtos;
 using CognitiveLedger.Parser.PDF.Interfaces;
 using CognitiveLedger.Parser.PDF.Request;
 using CognitiveLedger.Parser.PDF.Response;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using UglyToad.PdfPig;
 
 namespace CognitiveLedger.Parser.PDF;
 
 public sealed class PdfPigTextExtractor : IPdfTextExtractor
 {
-    private readonly ILogger<PdfPigTextExtractor> _logger;
+    private readonly AppLog<PdfPigTextExtractor> _logger;
 
-    public PdfPigTextExtractor(ILogger<PdfPigTextExtractor>? logger = null)
+    public PdfPigTextExtractor(AppLog<PdfPigTextExtractor> logger)
     {
-        _logger = logger ?? NullLogger<PdfPigTextExtractor>.Instance;
+        _logger = logger;
     }
 
-    public ExtractPdfTextResponse ExtractPdfText( ExtractPdfTextRequest request)
+    public ExtractPdfTextResponse ExtractPdfText(ExtractPdfTextRequest request)
     {
-        using var operation = TimedLogOperation.Start(_logger, nameof(ExtractPdfText));
+        _logger.LogMethodStart();
         ArgumentNullException.ThrowIfNull(request);
 
         if (request.PdfData is null)
@@ -44,10 +43,8 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
         using var document = PdfDocument.Open(stream);
 
         var response = ExtractText(document);
-        _logger.LogInformation(
-            "Extracted {TextItemCount} text items from {PdfByteCount} PDF bytes",
-            response.TextItems.Count,
-            request.PdfData.Length);
+        _logger.LogInfo($"Extracted {response.TextItems.Count} text items from {request.PdfData.Length} PDF bytes");
+        _logger.LogMethodEnd();
         return response;
     }
 

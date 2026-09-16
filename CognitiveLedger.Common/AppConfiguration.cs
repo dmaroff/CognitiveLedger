@@ -7,15 +7,8 @@ public sealed class AppConfiguration : IAppConfiguration
     private const string AiApiKeyEnvVar = "AI:COGNITIVE_LEDGER_API_KEY";
     private const string AiRequestTimeoutSecondsEnvVar = "AI:RequestTimeoutSeconds";
 
-    public AppConfiguration()
+    public AppConfiguration(IConfiguration configuration)
     {
-        var configuration = new ConfigurationBuilder()
-            .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json")
-            .AddJsonFile("appsettings.local.json", optional: true)
-            .AddEnvironmentVariables()
-            .Build();
-
         Set_AiProvider(configuration);
         Set_AiApiKey(configuration);
         Set_AiRequestTimeoutSeconds(configuration);
@@ -24,18 +17,18 @@ public sealed class AppConfiguration : IAppConfiguration
         Set_AiEndpoint(configuration);
     }
 
-    private void Set_AiProvider(IConfigurationRoot configuration)
+    private void Set_AiProvider(IConfiguration configuration)
     {
         AiProvider = configuration["AI:Provider"] ?? "OpenAI";
     }
     
-    private void Set_AiApiKey(IConfigurationRoot configuration)
+    private void Set_AiApiKey(IConfiguration configuration)
     {
         AiApiKey = configuration["AI:COGNITIVE_LEDGER_API_KEY"]
                        ?? string.Empty;
     }
 
-    private void Set_AiRequestTimeoutSeconds(IConfigurationRoot configuration)
+    private void Set_AiRequestTimeoutSeconds(IConfiguration configuration)
     {
         var timeoutSetting = configuration["AI:RequestTimeoutSeconds"];
         if (timeoutSetting is null)
@@ -51,7 +44,7 @@ public sealed class AppConfiguration : IAppConfiguration
         AiRequestTimeoutSeconds = timeoutSeconds;
     }
     
-    private void Set_AiModel(IConfigurationRoot configuration)
+    private void Set_AiModel(IConfiguration configuration)
     {
         var modelSetting = configuration["AI:Model"];
         if (string.IsNullOrWhiteSpace(modelSetting))
@@ -62,14 +55,14 @@ public sealed class AppConfiguration : IAppConfiguration
         AiModel = modelSetting;
     }
     
-    private void Set_ConnectionString(IConfigurationRoot configuration)
+    private void Set_ConnectionString(IConfiguration configuration)
     {
         ConnectionString = configuration.GetConnectionString("CognitiveLedger") 
                            ?? throw new InvalidOperationException(
                                "Database connection string 'CognitiveLedger' is not configured.");
     }
     
-    private void Set_AiEndpoint(IConfigurationRoot configuration)
+    private void Set_AiEndpoint(IConfiguration configuration)
     {
         AiEndpoint = configuration["AI:Endpoint"] ?? string.Empty;
     }

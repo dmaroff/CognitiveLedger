@@ -37,7 +37,7 @@ public class Tests
             TestLogging.CreateLogger<PdfPigTextExtractor>());
 
         var extractPdfText = textExtractor.ExtractPdfText(
-            new ExtractPdfTextRequest { PdfData = originalPdf });
+            new ExtractPdfTextRequest { UserId = 1, PdfData = originalPdf });
         
         logger.LogInformation("Extracted text from PDF: {TextLength}", extractPdfText.FullText.Length);
         
@@ -61,12 +61,13 @@ public class Tests
         var result = await sanitizer.SanitizePiiAsync(
             new SanitizePiiRequest
             {
+                UserId = 1,
                 PdfData = originalPdf,
                 PiiValues = piiValues
             });
 
         var rasterizedText = textExtractor.ExtractPdfText(
-            new ExtractPdfTextRequest { PdfData = result.RasterizedPdfData });
+            new ExtractPdfTextRequest { UserId = 1, PdfData = result.RasterizedPdfData });
 
         using (Assert.EnterMultipleScope())
         {
@@ -100,7 +101,12 @@ public class Tests
         var sourcePdf = await File.ReadAllBytesAsync(sourcePdfPath);
         var sourceDocumentSha256 = Convert.ToHexString(SHA256.HashData(sourcePdf));
         
-        IAppConfiguration config = new AppConfiguration();
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json")
+            .AddJsonFile("appsettings.Development.json", optional: true)
+            .Build();
+        IAppConfiguration config = new AppConfiguration(configuration);
         var apiKey = config.AiApiKey;
         Assert.That(apiKey, Is.Not.Null.And.Not.Empty);
 
@@ -219,10 +225,10 @@ public class Tests
             TestLogging.CreateLogger<PdfPiiSanitizer>());
 
         var result = await sanitizer.SanitizePiiAsync(
-            new SanitizePiiRequest { PdfData = originalPdf });
+            new SanitizePiiRequest { UserId = 1, PdfData = originalPdf });
 
         var rasterizedText = textExtractor.ExtractPdfText(
-            new ExtractPdfTextRequest { PdfData = result.RasterizedPdfData });
+            new ExtractPdfTextRequest { UserId = 1, PdfData = result.RasterizedPdfData });
 
         using (Assert.EnterMultipleScope())
         {

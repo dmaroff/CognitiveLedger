@@ -1,3 +1,4 @@
+using CognitiveLedger.Common;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Serilog;
@@ -71,9 +72,13 @@ internal static class TestLogging
         TestContext.Progress.WriteLine($"Log file directory: {logDirectory}");
     }
 
-    public static ILogger<T> CreateLogger<T>() =>
-        (_loggerFactory ?? throw new InvalidOperationException("Test logging is not initialized."))
-        .CreateLogger<T>();
+    public static AppLog<T> CreateLogger<T>()
+    {
+        var loggerFactory = _loggerFactory
+            ?? throw new InvalidOperationException("Test logging is not initialized.");
+
+        return new AppLog<T>(loggerFactory.CreateLogger<T>());
+    }
 
     public static void Dispose()
     {
