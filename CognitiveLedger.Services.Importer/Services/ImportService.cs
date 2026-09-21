@@ -6,6 +6,9 @@ using CognitiveLedger.Common;
 using CognitiveLedger.Common.Response;
 using CognitiveLedger.Data.Repositories;
 using CognitiveLedger.Data.Models.CreditCard;
+using CognitiveLedger.Common.Types;
+using AiModelCatalog = CognitiveLedger.Data.Models.AiModelCatalog;
+using AiProviderCatalog = CognitiveLedger.Data.Models.AiProviderCatalog;
 using CognitiveLedger.Parser.PDF;
 using CognitiveLedger.Parser.PDF.Interfaces;
 using CognitiveLedger.Parser.PDF.Response;
@@ -99,9 +102,8 @@ public sealed class ImportService : IImportService
         }
         
         var audit = await StartProcessingAuditAsync(
-            request.StatementType.ToString(),
-            _config.AiProvider,
-            _config.AiModel,
+            request.StatementType,
+            request.FileName,
             cancellationToken);
         
         _localQueueService.Enqueue(request, audit.Id);
@@ -144,16 +146,32 @@ public sealed class ImportService : IImportService
     }
 
     private Task<StatementProcessingAudit> StartProcessingAuditAsync(
-        string parserName,
-        string aiProvider,
-        string aiModel,
+        StatementType statementType,
+        string filename,
         CancellationToken cancellationToken) =>
         _processingRepository.StartAsync(new StatementProcessingAudit
         {
-            StatementType = parserName,
-            AiProvider = aiProvider,
-            AiModel = aiModel
+            Filename = filename,
+            StatementTypeId = statementType switch
+            {
+                StatementType.CreditCard => StatementTypeCatalog.CreditCardId,
+                _ => throw new ArgumentOutOfRangeException(nameof(statementType), statementType, "Unsupported statement type.")
+            },
+            AiProviderId = GetAiProviderId(_config.AiProvider),
+            AiModelId = GetAiModelId(_config.AiProvider, _config.AiModel)
         }, cancellationToken);
+
+    private static long GetAiProviderId(string provider) => provider switch
+    {
+        "OpenAI" => AiProviderCatalog.OpenAiId,
+        _ => throw new InvalidOperationException($"AI provider '{provider}' is not configured in the database catalog.")
+    };
+
+    private static long GetAiModelId(string provider, string model) => (provider, model) switch
+    {
+        ("OpenAI", "gpt-5.6-terra") => AiModelCatalog.Gpt56TerraId,
+        _ => throw new InvalidOperationException($"AI model '{provider}/{model}' is not configured in the database catalog.")
+    };
 
     private static ImportResponse NotConfigured(
         string errorCode,

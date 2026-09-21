@@ -3,6 +3,7 @@ using System;
 using CognitiveLedger.Data.Database;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CognitiveLedger.Data.Database.Migrations
 {
     [DbContext(typeof(CognitiveLedgerDbContext))]
-    partial class CognitiveLedgerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260918185554_NormalizeProcessingAuditMetadata")]
+    partial class NormalizeProcessingAuditMetadata
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -299,11 +302,6 @@ namespace CognitiveLedger.Data.Database.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("extracted_transaction_count");
 
-                    b.Property<string>("Filename")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
-                        .HasColumnName("filename");
-
                     b.Property<int>("IgnoredRowCount")
                         .HasColumnType("integer")
                         .HasColumnName("ignored_row_count");
@@ -482,7 +480,7 @@ namespace CognitiveLedger.Data.Database.Migrations
             modelBuilder.Entity("CognitiveLedger.Data.Models.AiModel", b =>
                 {
                     b.HasOne("CognitiveLedger.Data.Models.AiProvider", "AiProvider")
-                        .WithMany()
+                        .WithMany("Models")
                         .HasForeignKey("AiProviderId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
@@ -515,13 +513,13 @@ namespace CognitiveLedger.Data.Database.Migrations
             modelBuilder.Entity("CognitiveLedger.Data.Models.CreditCard.StatementProcessingAudit", b =>
                 {
                     b.HasOne("CognitiveLedger.Data.Models.AiModel", "AiModel")
-                        .WithMany()
+                        .WithMany("ProcessingAudits")
                         .HasForeignKey("AiModelId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("CognitiveLedger.Data.Models.AiProvider", "AiProvider")
-                        .WithMany()
+                        .WithMany("ProcessingAudits")
                         .HasForeignKey("AiProviderId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
@@ -532,13 +530,13 @@ namespace CognitiveLedger.Data.Database.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("CognitiveLedger.Data.Models.StatementType", "StatementType")
-                        .WithMany()
+                        .WithMany("ProcessingAudits")
                         .HasForeignKey("StatementTypeId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("CognitiveLedger.Data.Models.Status", "Status")
-                        .WithMany()
+                        .WithMany("ProcessingAudits")
                         .HasForeignKey("StatusId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
@@ -554,6 +552,18 @@ namespace CognitiveLedger.Data.Database.Migrations
                     b.Navigation("Status");
                 });
 
+            modelBuilder.Entity("CognitiveLedger.Data.Models.AiModel", b =>
+                {
+                    b.Navigation("ProcessingAudits");
+                });
+
+            modelBuilder.Entity("CognitiveLedger.Data.Models.AiProvider", b =>
+                {
+                    b.Navigation("Models");
+
+                    b.Navigation("ProcessingAudits");
+                });
+
             modelBuilder.Entity("CognitiveLedger.Data.Models.CreditCard.CreditCardStatement", b =>
                 {
                     b.Navigation("ProcessingAudits");
@@ -563,7 +573,14 @@ namespace CognitiveLedger.Data.Database.Migrations
 
             modelBuilder.Entity("CognitiveLedger.Data.Models.StatementType", b =>
                 {
+                    b.Navigation("ProcessingAudits");
+
                     b.Navigation("Statements");
+                });
+
+            modelBuilder.Entity("CognitiveLedger.Data.Models.Status", b =>
+                {
+                    b.Navigation("ProcessingAudits");
                 });
 #pragma warning restore 612, 618
         }

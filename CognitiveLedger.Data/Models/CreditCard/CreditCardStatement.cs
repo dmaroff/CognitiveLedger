@@ -8,8 +8,8 @@ namespace CognitiveLedger.Data.Models.CreditCard;
 
 public sealed class CreditCardStatement : AuditableModelBase
 {
-    public long StatementTypeId { get; set; } = StatementTypeCatalog.CreditCardId;
-    public StatementType StatementType { get; set; } = null!;
+    public long StatementTypeId { get; init; } = StatementTypeCatalog.CreditCardId;
+    public StatementType? StatementType { get; init; }
     public string? SourceDocumentSha256 { get; init; }
     public string Issuer { get; init; } = string.Empty;
     public string AccountName { get; init; } = string.Empty;
@@ -24,5 +24,4 @@ public sealed class CreditCardStatement : AuditableModelBase
     public decimal InterestCharged { get; init; }
 
     public ICollection<CreditCardTransaction> Transactions { get; init; } = [];
-    public ICollection<StatementProcessingAudit> ProcessingAudits { get; init; } = [];
 }

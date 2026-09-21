@@ -94,12 +94,10 @@ internal static class Program
 
             if (developmentSettings is not null)
             {
-                appSettings = appSettings with
-                {
-                    Importer = developmentSettings.Importer ?? appSettings.Importer,
-                    PdfFolder = developmentSettings.PdfFolder ?? appSettings.PdfFolder,
-                    PiiToRedact = developmentSettings.PiiToRedact ?? appSettings.PiiToRedact
-                };
+                appSettings = new AppSettings(
+                    Importer: developmentSettings.Importer ?? appSettings.Importer,
+                    PdfFolder: developmentSettings.PdfFolder ?? appSettings.PdfFolder,
+                    PiiToRedact: developmentSettings.PiiToRedact ?? appSettings.PiiToRedact);
             }
         }
 
@@ -121,8 +119,7 @@ internal static class Program
                 "A non-empty PdfFolder value is required in appsettings.json.");
         }
 
-        if (appSettings.PiiToRedact is null ||
-            !appSettings.PiiToRedact.Any(value => !string.IsNullOrWhiteSpace(value)))
+        if (appSettings.PiiToRedact is null || !appSettings.PiiToRedact.All(string.IsNullOrEmpty))
         {
             throw new InvalidOperationException(
                 "At least one PiiToRedact value is required in appsettings.json.");
@@ -138,11 +135,11 @@ internal static class Program
             return [];
         }
 
-        return Directory
+        return [.. Directory
             .EnumerateFiles(pdfFolder, "*", SearchOption.TopDirectoryOnly)
             .Where(path => string.Equals(Path.GetExtension(path), ".pdf", StringComparison.OrdinalIgnoreCase))
             .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        ];
     }
 
     private static void DisplayMenu(IReadOnlyList<string> pdfFiles)
@@ -174,6 +171,7 @@ internal static class Program
             Console.WriteLine($"\nImporting {Path.GetFileName(pdfPath)}...");
 
             var request = new ImportPdfRequest(
+                UserId: 100,
                 Base64PdfData: Convert.ToBase64String(await File.ReadAllBytesAsync(pdfPath)),
                 FileName: Path.GetFileName(pdfPath),
                 BankName: "Unknown",
@@ -223,6 +221,7 @@ internal static class Program
     }
 
     private sealed record ImportPdfRequest(
+        int UserId,
         string Base64PdfData,
         string FileName,
         string BankName,

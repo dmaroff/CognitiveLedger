@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using CognitiveLedger.Data.Database;
+using CognitiveLedger.Data.Models;
 using CognitiveLedger.Data.Models.CreditCard;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,9 +11,6 @@ namespace CognitiveLedger.Data.Repositories;
 public sealed class StatementProcessingRepository(CognitiveLedgerDbContext dbContext)
     : IStatementProcessingRepository
 {
-    private const string ProcessingStatus = "Processing";
-    private const string SucceededStatus = "Succeeded";
-    private const string FailedStatus = "Failed";
     private const int MaximumErrorMessageLength = 4000;
 
     public async Task<StatementProcessingAudit> StartAsync(
@@ -32,7 +30,7 @@ public sealed class StatementProcessingRepository(CognitiveLedgerDbContext dbCon
         audit.StartedAtUtc = startedAtUtc;
         audit.CompletedAtUtc = null;
         audit.DurationMilliseconds = null;
-        audit.Status = ProcessingStatus;
+        audit.StatusId = StatusCatalog.ProcessingId;
         audit.StatementId = null;
         audit.ErrorMessage = null;
         audit.CreatedAtUtc = startedAtUtc;
@@ -68,7 +66,7 @@ public sealed class StatementProcessingRepository(CognitiveLedgerDbContext dbCon
         audit.DurationMilliseconds = GetDurationMilliseconds(
             audit.StartedAtUtc,
             completedAtUtc);
-        audit.Status = SucceededStatus;
+        audit.StatusId = StatusCatalog.SuccessId;
         audit.ExtractedTransactionCount = extractedTransactionCount;
         audit.IgnoredRowCount = ignoredRowCount;
         audit.CorrectedRowCount = correctedRowCount;
@@ -107,7 +105,7 @@ public sealed class StatementProcessingRepository(CognitiveLedgerDbContext dbCon
         audit.DurationMilliseconds = GetDurationMilliseconds(
             audit.StartedAtUtc,
             completedAtUtc);
-        audit.Status = FailedStatus;
+        audit.StatusId = StatusCatalog.FailedId;
         audit.ExtractedTransactionCount = extractedTransactionCount;
         audit.IgnoredRowCount = ignoredRowCount;
         audit.CorrectedRowCount = correctedRowCount;

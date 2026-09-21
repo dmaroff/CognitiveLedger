@@ -3,6 +3,7 @@ using System;
 using CognitiveLedger.Data.Database;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CognitiveLedger.Data.Database.Migrations
 {
     [DbContext(typeof(CognitiveLedgerDbContext))]
-    partial class CognitiveLedgerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260918184426_AddStatusLookup")]
+    partial class AddStatusLookup
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -21,71 +24,6 @@ namespace CognitiveLedger.Data.Database.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
-
-            modelBuilder.Entity("CognitiveLedger.Data.Models.AiModel", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<long>("AiProviderId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("ai_provider_id");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("name");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AiProviderId", "Name")
-                        .IsUnique();
-
-                    b.ToTable("ai_model", (string)null);
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1L,
-                            AiProviderId = 1L,
-                            Name = "gpt-5.6-terra"
-                        });
-                });
-
-            modelBuilder.Entity("CognitiveLedger.Data.Models.AiProvider", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("name");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Name")
-                        .IsUnique();
-
-                    b.ToTable("ai_provider", (string)null);
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1L,
-                            Name = "OpenAI"
-                        });
-                });
 
             modelBuilder.Entity("CognitiveLedger.Data.Models.CreditCard.CreditCardStatement", b =>
                 {
@@ -262,13 +200,17 @@ namespace CognitiveLedger.Data.Database.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
-                    b.Property<long>("AiModelId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("ai_model_id");
+                    b.Property<string>("AiModel")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("ai_model");
 
-                    b.Property<long>("AiProviderId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("ai_provider_id");
+                    b.Property<string>("AiProvider")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("ai_provider");
 
                     b.Property<DateTime?>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -299,11 +241,6 @@ namespace CognitiveLedger.Data.Database.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("extracted_transaction_count");
 
-                    b.Property<string>("Filename")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
-                        .HasColumnName("filename");
-
                     b.Property<int>("IgnoredRowCount")
                         .HasColumnType("integer")
                         .HasColumnName("ignored_row_count");
@@ -320,9 +257,11 @@ namespace CognitiveLedger.Data.Database.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("statement_id");
 
-                    b.Property<long>("StatementTypeId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("statement_type_id");
+                    b.Property<string>("StatementType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("statement_type");
 
                     b.Property<long>("StatusId")
                         .HasColumnType("bigint")
@@ -338,15 +277,9 @@ namespace CognitiveLedger.Data.Database.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AiModelId");
-
-                    b.HasIndex("AiProviderId");
-
                     b.HasIndex("StartedAtUtc");
 
                     b.HasIndex("StatementId");
-
-                    b.HasIndex("StatementTypeId");
 
                     b.HasIndex("StatusId");
 
@@ -479,17 +412,6 @@ namespace CognitiveLedger.Data.Database.Migrations
                         });
                 });
 
-            modelBuilder.Entity("CognitiveLedger.Data.Models.AiModel", b =>
-                {
-                    b.HasOne("CognitiveLedger.Data.Models.AiProvider", "AiProvider")
-                        .WithMany()
-                        .HasForeignKey("AiProviderId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("AiProvider");
-                });
-
             modelBuilder.Entity("CognitiveLedger.Data.Models.CreditCard.CreditCardStatement", b =>
                 {
                     b.HasOne("CognitiveLedger.Data.Models.StatementType", "StatementType")
@@ -514,42 +436,18 @@ namespace CognitiveLedger.Data.Database.Migrations
 
             modelBuilder.Entity("CognitiveLedger.Data.Models.CreditCard.StatementProcessingAudit", b =>
                 {
-                    b.HasOne("CognitiveLedger.Data.Models.AiModel", "AiModel")
-                        .WithMany()
-                        .HasForeignKey("AiModelId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("CognitiveLedger.Data.Models.AiProvider", "AiProvider")
-                        .WithMany()
-                        .HasForeignKey("AiProviderId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("CognitiveLedger.Data.Models.CreditCard.CreditCardStatement", "Statement")
                         .WithMany("ProcessingAudits")
                         .HasForeignKey("StatementId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("CognitiveLedger.Data.Models.StatementType", "StatementType")
-                        .WithMany()
-                        .HasForeignKey("StatementTypeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("CognitiveLedger.Data.Models.Status", "Status")
-                        .WithMany()
+                        .WithMany("ProcessingAudits")
                         .HasForeignKey("StatusId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("AiModel");
-
-                    b.Navigation("AiProvider");
-
                     b.Navigation("Statement");
-
-                    b.Navigation("StatementType");
 
                     b.Navigation("Status");
                 });
@@ -564,6 +462,11 @@ namespace CognitiveLedger.Data.Database.Migrations
             modelBuilder.Entity("CognitiveLedger.Data.Models.StatementType", b =>
                 {
                     b.Navigation("Statements");
+                });
+
+            modelBuilder.Entity("CognitiveLedger.Data.Models.Status", b =>
+                {
+                    b.Navigation("ProcessingAudits");
                 });
 #pragma warning restore 612, 618
         }

@@ -14,6 +14,7 @@ using CognitiveLedger.Parser.PDF.Types;
 using CognitiveLedger.Services.Importer.Exceptions;
 using CognitiveLedger.Services.Importer.Request;
 using CognitiveLedger.Services.Importer.Response;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace CognitiveLedger.Services.Importer.Services;
 
@@ -21,26 +22,17 @@ public sealed class LocalQueueService : ILocalQueueService
 {
     private readonly AppLog<LocalQueueService> _logger;
     private readonly IPiiSanitizer _piiSanitizer;
-    private readonly IAppConfiguration _config;
-    private readonly IStatementProcessingRepository _processingRepository;
-    private readonly IStatementRepository _statementRepository;
-    private readonly IOpenAiPdfStatementReader _statementReader;
+    private readonly IServiceScopeFactory _scopeFactory;
     
     private readonly ConcurrentQueue<QueueItem> _queue = new ConcurrentQueue<QueueItem>();
 
     public LocalQueueService(
         IPiiSanitizer piiSanitizer,
-        IOpenAiPdfStatementReader statementReader,
-        IAppConfiguration config,
-        IStatementProcessingRepository processingRepository,
-        IStatementRepository statementRepository,
+        IServiceScopeFactory scopeFactory,
         AppLog<LocalQueueService> logger)
     {
         _piiSanitizer = piiSanitizer;
-        _statementReader = statementReader;
-        _config = config;
-        _processingRepository = processingRepository;
-        _statementRepository = statementRepository;
+        _scopeFactory = scopeFactory;
         _logger = logger;
         
         // Start the queue processing task
@@ -57,24 +49,19 @@ public sealed class LocalQueueService : ILocalQueueService
     
     private bool TryDequeue(out QueueItem? request)
     {
-        _logger.LogMethodStart();
         if (!_queue.TryDequeue(out var queueItem))
         {
-            _logger.LogInfo("Queue is empty.");
             request = null;
             return false;
         }
         request = queueItem;
         _logger.LogInfo($"Dequeued: ({request.Request.FileName})");
-        _logger.LogMethodEnd();
         return true;
     }
     
     private async Task RunQueueProcessor(CancellationToken cancellationToken)
     {
         _logger.LogMethodStart();
-        
-        ValidateConfiguration();
         
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -91,9 +78,9 @@ public sealed class LocalQueueService : ILocalQueueService
         _logger.LogMethodEnd();
     }
     
-    private void ValidateConfiguration()
+    private static void ValidateConfiguration(IAppConfiguration config)
     {
-        if (_config.AiRequestTimeoutSeconds <= 0)
+        if (config.AiRequestTimeoutSeconds <= 0)
         {
             throw new InvalidOperationException(
                 "OpenAI:RequestTimeoutSeconds must be a positive integer.");
@@ -107,6 +94,15 @@ public sealed class LocalQueueService : ILocalQueueService
     {
         _logger.LogMethodStart();
         _logger.LogInfo($"Processing: ({request})");
+
+        using var scope = _scopeFactory.CreateScope();
+        var config = scope.ServiceProvider.GetRequiredService<IAppConfiguration>();
+        var statementReader = scope.ServiceProvider.GetRequiredService<IOpenAiPdfStatementReader>();
+        var statementRepository = scope.ServiceProvider.GetRequiredService<IStatementRepository>();
+        var processingRepository = scope.ServiceProvider
+            .GetRequiredService<IStatementProcessingRepository>();
+
+        ValidateConfiguration(config);
         var sourceDocumentSha256 = Convert.ToHexString(SHA256.HashData(request.FileData));
         
         if (request.StatementType != StatementType.CreditCard)
@@ -124,17 +120,23 @@ public sealed class LocalQueueService : ILocalQueueService
                 ? $"Import job removed {sanitizePiiResponse.PiiItems.Count} PII items from the PDF"
                 : $"Import job did not detect any PII items in the PDF");
 
-        var statementResponse = await ReadStatementAsync(request, sanitizePiiResponse);
+        var statementResponse = await ReadStatementAsync(
+            request,
+            sanitizePiiResponse,
+            config,
+            statementReader);
         if (statementResponse.Status != ResponseStatus.Success)
         {
             return Failed(statementResponse);
         }
         
         var savedStatement = await PersistStatementAsync(
-                MapToCreditCardStatement(statementResponse, sourceDocumentSha256),
-                cancellationToken);
+            statementRepository,
+            MapToCreditCardStatement(statementResponse, sourceDocumentSha256),
+            cancellationToken);
         
         await CompleteProcessingAuditAsync(
+            processingRepository,
             auditId,
             savedStatement.Id,
             savedStatement.Transactions.Count,
@@ -146,13 +148,16 @@ public sealed class LocalQueueService : ILocalQueueService
     
     private async Task<ExtractPdfStatementResponse> ReadStatementAsync(
         ImportRequest request,
-        SanitizePiiResponse sanitizePiiResponse)
+        SanitizePiiResponse sanitizePiiResponse,
+        IAppConfiguration config,
+        IOpenAiPdfStatementReader statementReader)
     {
         try
         {
             _logger.LogMethodStart(request);
-            var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(_config.AiRequestTimeoutSeconds));
-            var extractedStatement = await _statementReader.ExtractAsync(
+            using var tokenSource = new CancellationTokenSource(
+                TimeSpan.FromSeconds(config.AiRequestTimeoutSeconds));
+            var extractedStatement = await statementReader.ExtractAsync(
                 new SynchronyAmazonStatementRequest
                 {
                     PdfData = sanitizePiiResponse.RasterizedPdfData
@@ -163,12 +168,12 @@ public sealed class LocalQueueService : ILocalQueueService
         catch (OperationCanceledException)
         {
             _logger.LogError(
-                $"OpenAI PDF statement extraction timed out after {_config.AiRequestTimeoutSeconds} seconds");
+                $"OpenAI PDF statement extraction timed out after {config.AiRequestTimeoutSeconds} seconds");
             return new ExtractPdfStatementResponse
             {
                 Status = ResponseStatus.Failed,
                 ErrorCode = "OPENAI_TIMEOUT",
-                ErrorMessage = $"OpenAI PDF statement extraction timed out after {_config.AiRequestTimeoutSeconds} seconds.",
+                ErrorMessage = $"OpenAI PDF statement extraction timed out after {config.AiRequestTimeoutSeconds} seconds.",
                 Statement = null
             };
         }
@@ -195,38 +200,20 @@ public sealed class LocalQueueService : ILocalQueueService
             PiiValues = request.PiiToRedact
         }, cancellationToken);
 
-    private Task<StatementProcessingAudit> StartProcessingAuditAsync(
-        string parserName,
-        string aiProvider,
-        string aiModel,
-        CancellationToken cancellationToken) =>
-        _processingRepository.StartAsync(new StatementProcessingAudit
-        {
-            StatementType = parserName,
-            AiProvider = aiProvider,
-            AiModel = aiModel
-        }, cancellationToken);
-
     private Task<CreditCardStatement> PersistStatementAsync(
+        IStatementRepository statementRepository,
         CreditCardStatement statement,
         CancellationToken cancellationToken) =>
-        _statementRepository.InsertStatementAsync(statement, cancellationToken);
+        statementRepository.InsertStatementAsync(statement, cancellationToken);
 
     private Task<StatementProcessingAudit> CompleteProcessingAuditAsync(
+        IStatementProcessingRepository processingRepository,
         long auditId,
         long statementId,
         int transactionCount,
         CancellationToken cancellationToken) =>
-        _processingRepository.CompleteAsync(
+        processingRepository.CompleteAsync(
             auditId, statementId, transactionCount,
-            cancellationToken: cancellationToken);
-
-    private Task<StatementProcessingAudit> FailProcessingAuditAsync(
-        long auditId,
-        Exception exception,
-        CancellationToken cancellationToken) =>
-        _processingRepository.FailAsync(
-            auditId, exception,
             cancellationToken: cancellationToken);
 
     private static ImportResponse NotConfigured(
@@ -245,49 +232,11 @@ public sealed class LocalQueueService : ILocalQueueService
         ErrorMessage = response.ErrorMessage
     };
     
-    private static ImportResponse Existing(long statementId) => new()
-    {
-        Status = ResponseStatus.Success,
-        StatementId = statementId
-    };
-    
     private static ImportResponse Success(long statementId) => new()
     {
         Status = ResponseStatus.Success,
         StatementId = statementId
     };
-
-    private static void ValidateRequest(ImportRequest request)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        if (request.FileType is ImportFileType.Unknown ||
-            !Enum.IsDefined(request.FileType))
-        {
-            throw new ImportValidationException(request, "A supported file type is required.");
-        }
-
-        if (request.FileData.Length == 0)
-        {
-            throw new ImportValidationException(request, "Non-empty file data is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.FileName))
-        {
-            throw new ImportValidationException(request, "A file name is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.SourceName))
-        {
-            throw new ImportValidationException(request, "A source name is required.");
-        }
-
-        if (request.StatementType is StatementType.Unknown ||
-            !Enum.IsDefined(request.StatementType))
-        {
-            throw new ImportValidationException(request, "A supported statement type is required.");
-        }
-    }
     
     private static CreditCardStatement MapToCreditCardStatement(
         ExtractPdfStatementResponse result,

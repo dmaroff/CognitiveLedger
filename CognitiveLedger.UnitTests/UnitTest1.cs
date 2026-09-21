@@ -5,6 +5,8 @@ using CognitiveLedger.AI.OpenAI.Response;
 using CognitiveLedger.AI.OpenAI.StatementDefinitions;
 using CognitiveLedger.Common;
 using CognitiveLedger.Data.Database;
+using CognitiveLedger.Data.Models;
+using CognitiveLedger.Common.Types;
 using CognitiveLedger.Data.Repositories;
 using CognitiveLedger.Parser.PDF;
 using CognitiveLedger.Parser.PDF.Dtos;
@@ -148,9 +150,10 @@ public class Tests
         var audit = await processingRepository.StartAsync(
             new DataProcessingAudit
             {
-                StatementType = "SynchronyAmazon",
-                AiProvider = "OpenAI",
-                AiModel = config.AiModel
+                Filename = Path.GetFileName(pdfPath),
+                StatementTypeId = StatementTypeCatalog.CreditCardId,
+                AiProviderId = AiProviderCatalog.OpenAiId,
+                AiModelId = AiModelCatalog.Gpt56TerraId
             });
 
         ExtractPdfStatementResponse result;
@@ -203,7 +206,8 @@ public class Tests
                 Is.EqualTo(stmt.TotalPurchases - stmt.TotalOtherCredits));
             Assert.That(savedStatement.Id, Is.GreaterThan(0));
             Assert.That(audit.StatementId, Is.EqualTo(savedStatement.Id));
-            Assert.That(audit.Status, Is.EqualTo("Succeeded"));
+            Assert.That(audit.Filename, Is.EqualTo(Path.GetFileName(pdfPath)));
+            Assert.That(audit.StatusId, Is.EqualTo(StatusCatalog.SuccessId));
         }
     }
 

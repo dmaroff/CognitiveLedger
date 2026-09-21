@@ -13,6 +13,9 @@ public class CognitiveLedgerDbContext(DbContextOptions<CognitiveLedgerDbContext>
     public DbSet<CreditCardTransaction> Transactions => Set<CreditCardTransaction>();
     public DbSet<StatementProcessingAudit> ProcessingAudits => Set<StatementProcessingAudit>();
     public DbSet<StatementType> StatementTypes => Set<StatementType>();
+    public DbSet<Status> Statuses => Set<Status>();
+    public DbSet<AiProvider> AiProviders => Set<AiProvider>();
+    public DbSet<AiModel> AiModels => Set<AiModel>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -20,7 +23,7 @@ public class CognitiveLedgerDbContext(DbContextOptions<CognitiveLedgerDbContext>
         {
             entity.ToTable("statement");
             entity.HasOne(statement => statement.StatementType)
-                .WithMany(type => type.Statements)
+                .WithMany()
                 .HasForeignKey(statement => statement.StatementTypeId)
                 .OnDelete(DeleteBehavior.Restrict);
             entity.Property(statement => statement.SourceDocumentSha256)
@@ -53,16 +56,68 @@ public class CognitiveLedgerDbContext(DbContextOptions<CognitiveLedgerDbContext>
         modelBuilder.Entity<StatementProcessingAudit>(entity =>
         {
             entity.ToTable("processing_audit");
-            entity.Property(audit => audit.StatementType).IsRequired().HasMaxLength(100);
-            entity.Property(audit => audit.AiProvider).IsRequired().HasMaxLength(100);
-            entity.Property(audit => audit.AiModel).IsRequired().HasMaxLength(100);
-            entity.Property(audit => audit.Status).IsRequired().HasMaxLength(50);
+            entity.Property(audit => audit.Filename).HasMaxLength(255);
             entity.Property(audit => audit.ErrorMessage).HasMaxLength(4000);
             entity.HasIndex(audit => audit.StartedAtUtc);
             entity.HasOne(audit => audit.Statement)
-                .WithMany(statement => statement.ProcessingAudits)
+                .WithMany()
                 .HasForeignKey(audit => audit.StatementId)
                 .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(audit => audit.Status)
+                .WithMany()
+                .HasForeignKey(audit => audit.StatusId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(audit => audit.StatementType)
+                .WithMany()
+                .HasForeignKey(audit => audit.StatementTypeId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(audit => audit.AiProvider)
+                .WithMany()
+                .HasForeignKey(audit => audit.AiProviderId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(audit => audit.AiModel)
+                .WithMany()
+                .HasForeignKey(audit => audit.AiModelId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<AiProvider>(entity =>
+        {
+            entity.ToTable("ai_provider");
+            entity.HasKey(provider => provider.Id);
+            entity.Property(provider => provider.Name).IsRequired().HasMaxLength(100);
+            entity.HasIndex(provider => provider.Name).IsUnique();
+            entity.HasData(new { Id = AiProviderCatalog.OpenAiId, Name = "OpenAI" });
+        });
+
+        modelBuilder.Entity<AiModel>(entity =>
+        {
+            entity.ToTable("ai_model");
+            entity.HasKey(model => model.Id);
+            entity.Property(model => model.Name).IsRequired().HasMaxLength(100);
+            entity.HasIndex(model => new { model.AiProviderId, model.Name }).IsUnique();
+            entity.HasOne(model => model.AiProvider)
+                .WithMany()
+                .HasForeignKey(model => model.AiProviderId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasData(new
+            {
+                Id = AiModelCatalog.Gpt56TerraId,
+                AiProviderId = AiProviderCatalog.OpenAiId,
+                Name = "gpt-5.6-terra"
+            });
+        });
+
+        modelBuilder.Entity<Status>(entity =>
+        {
+            entity.ToTable("status");
+            entity.HasKey(status => status.Id);
+            entity.Property(status => status.Name).IsRequired().HasMaxLength(50);
+            entity.HasIndex(status => status.Name).IsUnique();
+            entity.HasData(
+                new { Id = StatusCatalog.ProcessingId, Name = "Processing" },
+                new { Id = StatusCatalog.SuccessId, Name = "Success" },
+                new { Id = StatusCatalog.FailedId, Name = "Failed" });
         });
 
         modelBuilder.Entity<StatementType>(entity =>
