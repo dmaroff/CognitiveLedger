@@ -19,6 +19,13 @@ public sealed class StatementProcessingRepository(CognitiveLedgerDbContext dbCon
     {
         ArgumentNullException.ThrowIfNull(audit);
 
+        if (audit.UserId <= 0)
+        {
+            throw new ArgumentException(
+                "A processing audit must belong to a user.",
+                nameof(audit));
+        }
+
         if (audit.Id != 0)
         {
             throw new ArgumentException(
@@ -59,6 +66,18 @@ public sealed class StatementProcessingRepository(CognitiveLedgerDbContext dbCon
         ValidateCounts(extractedTransactionCount, ignoredRowCount, correctedRowCount);
 
         var audit = await GetAuditAsync(processingAuditId, cancellationToken);
+        var statementBelongsToUser = await dbContext.Statements
+            .AnyAsync(
+                statement => statement.Id == statementId &&
+                             statement.UserId == audit.UserId,
+                cancellationToken);
+
+        if (!statementBelongsToUser)
+        {
+            throw new InvalidOperationException(
+                $"Statement {statementId} does not belong to the processing audit user.");
+        }
+
         var completedAtUtc = DateTime.UtcNow;
 
         audit.StatementId = statementId;

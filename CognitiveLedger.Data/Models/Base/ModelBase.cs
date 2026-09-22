@@ -57,13 +57,14 @@ public abstract class AuditableActivatableModelBase : IIdentifiable, IAuditable,
     public bool IsActive { get; set; } = true;
 }
 
-public abstract class AuditableDeletableModelBase : IIdentifiable, IAuditable, IDeletable
+public abstract class AuditableDeletableModelBase : IIdentifiable, IAuditable, IActivatable, IDeletable
 {
     public long Id { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public string? CreatedBy { get; set; }
     public DateTime? UpdatedAtUtc { get; set; }
     public string? UpdatedBy { get; set; }
+    public bool IsActive { get; set; } = true;
     public bool IsDeleted { get; set; } = false;
 }
 

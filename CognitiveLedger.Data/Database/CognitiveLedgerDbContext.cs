@@ -1,3 +1,4 @@
+using System;
 using CognitiveLedger.Data.Models.CreditCard;
 using CognitiveLedger.Data.Models;
 using CognitiveLedger.Common.Types;
@@ -6,9 +7,14 @@ using System.Text.RegularExpressions;
 
 namespace CognitiveLedger.Data.Database;
 
-public class CognitiveLedgerDbContext(DbContextOptions<CognitiveLedgerDbContext> options)
-    : DbContext(options)
+public class CognitiveLedgerDbContext : DbContext
 {
+    public CognitiveLedgerDbContext(DbContextOptions<CognitiveLedgerDbContext> options)
+        : base(options)
+    {
+    }
+
+    public DbSet<User> Users => Set<User>();
     public DbSet<CreditCardStatement> Statements => Set<CreditCardStatement>();
     public DbSet<CreditCardTransaction> Transactions => Set<CreditCardTransaction>();
     public DbSet<StatementProcessingAudit> ProcessingAudits => Set<StatementProcessingAudit>();
@@ -19,9 +25,34 @@ public class CognitiveLedgerDbContext(DbContextOptions<CognitiveLedgerDbContext>
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<User>(entity =>
+        {
+            entity.ToTable("user_account");
+            entity.Property(user => user.FirstName).IsRequired().HasMaxLength(100);
+            entity.Property(user => user.LastName).IsRequired().HasMaxLength(100);
+            entity.Property(user => user.Address).HasMaxLength(1000);
+            entity.Property(user => user.EmailAddress).IsRequired().HasMaxLength(320);
+            entity.HasIndex(user => user.EmailAddress).IsUnique();
+            entity.HasData(new
+            {
+                Id = UserCatalog.SystemUserId,
+                FirstName = "system",
+                LastName = "user",
+                EmailAddress = "system@cognitiveledger.invalid",
+                CreatedAtUtc = new DateTime(2026, 9, 22, 0, 0, 0, DateTimeKind.Utc),
+                CreatedBy = "system",
+                IsActive = true,
+                IsDeleted = false
+            });
+        });
+
         modelBuilder.Entity<CreditCardStatement>(entity =>
         {
             entity.ToTable("statement");
+            entity.HasOne(statement => statement.User)
+                .WithMany(user => user.Statements)
+                .HasForeignKey(statement => statement.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(statement => statement.StatementType)
                 .WithMany()
                 .HasForeignKey(statement => statement.StatementTypeId)
@@ -29,13 +60,19 @@ public class CognitiveLedgerDbContext(DbContextOptions<CognitiveLedgerDbContext>
             entity.Property(statement => statement.SourceDocumentSha256)
                 .HasColumnName("source_document_sha256")
                 .HasMaxLength(64);
-            entity.HasIndex(statement => statement.SourceDocumentSha256)
+            entity.HasIndex(statement =>
+                    new { statement.UserId, statement.SourceDocumentSha256 })
                 .IsUnique()
                 .HasFilter("source_document_sha256 IS NOT NULL");
             entity.Property(statement => statement.Issuer).IsRequired().HasMaxLength(200);
             entity.Property(statement => statement.AccountName).IsRequired().HasMaxLength(300);
-            entity.HasIndex(statement =>
-                new { statement.Issuer, statement.AccountName, statement.StatementPeriodEnd });
+            entity.HasIndex(statement => new
+            {
+                statement.UserId,
+                statement.Issuer,
+                statement.AccountName,
+                statement.StatementPeriodEnd
+            });
         });
 
         modelBuilder.Entity<CreditCardTransaction>(entity =>
@@ -58,7 +95,11 @@ public class CognitiveLedgerDbContext(DbContextOptions<CognitiveLedgerDbContext>
             entity.ToTable("processing_audit");
             entity.Property(audit => audit.Filename).HasMaxLength(255);
             entity.Property(audit => audit.ErrorMessage).HasMaxLength(4000);
-            entity.HasIndex(audit => audit.StartedAtUtc);
+            entity.HasIndex(audit => new { audit.UserId, audit.StartedAtUtc });
+            entity.HasOne(audit => audit.User)
+                .WithMany(user => user.ProcessingAudits)
+                .HasForeignKey(audit => audit.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(audit => audit.Statement)
                 .WithMany()
                 .HasForeignKey(audit => audit.StatementId)

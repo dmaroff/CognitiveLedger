@@ -171,7 +171,7 @@ internal static class Program
             Console.WriteLine($"\nImporting {Path.GetFileName(pdfPath)}...");
 
             var request = new ImportPdfRequest(
-                UserId: 100,
+                UserId: 1,
                 Base64PdfData: Convert.ToBase64String(await File.ReadAllBytesAsync(pdfPath)),
                 FileName: Path.GetFileName(pdfPath),
                 BankName: "Unknown",

@@ -3,7 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Serilog;
 
-namespace CognitiveLedger.UnitTests;
+namespace CognitiveLedger.Testing;
 
 [SetUpFixture]
 public sealed class TestLoggingSetup

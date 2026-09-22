@@ -12,15 +12,18 @@ public sealed class StatementRepository(CognitiveLedgerDbContext dbContext)
     : IStatementRepository
 {
     public async Task<CreditCardStatement?> FindBySourceDocumentSha256Async(
+        long userId,
         string sourceDocumentSha256,
         CancellationToken cancellationToken = default)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(userId);
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceDocumentSha256);
 
         return await dbContext.Statements
             .AsNoTracking()
             .SingleOrDefaultAsync(
-                statement => statement.SourceDocumentSha256 == sourceDocumentSha256,
+                statement => statement.UserId == userId &&
+                             statement.SourceDocumentSha256 == sourceDocumentSha256,
                 cancellationToken);
     }
 
@@ -29,6 +32,13 @@ public sealed class StatementRepository(CognitiveLedgerDbContext dbContext)
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(statement);
+
+        if (statement.UserId <= 0)
+        {
+            throw new ArgumentException(
+                "A statement must belong to a user.",
+                nameof(statement));
+        }
 
         if (string.IsNullOrWhiteSpace(statement.SourceDocumentSha256) ||
             statement.SourceDocumentSha256.Length != 64)

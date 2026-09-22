@@ -1,13 +1,17 @@
 <Solution>
   <Project Path="CognitiveLedger.AI/CognitiveLedger.AI.csproj" />
+  <Folder Name="/Agents/">
+    <Project Path="CognitiveLedger.Agents/CognitiveLedger.Agents.csproj" />
+  </Folder>
   <Folder Name="/Services/">
+    <Project Path="CognitiveLedger.Services.Agents.Api/CognitiveLedger.Services.Agents.Api.csproj" />
     <Project Path="CognitiveLedger.Services.Importer/CognitiveLedger.Services.Importer.csproj" />
+    <Project Path="CognitiveLedger.Services.LedgerMcp/CognitiveLedger.Services.LedgerMcp.csproj" />
   </Folder>
   <Folder Name="/Testing/">
     <Project Path="CognitiveLedger.TestApp/CognitiveLedger.TestApp.csproj" />
-    <Project Path="CognitiveLedger.UnitTests/CognitiveLedger.UnitTests.csproj" />
+    <Project Path="CognitiveLedger.Testing\CognitiveLedger.Testing.csproj" />
   </Folder>
-  <Project Path="CognitiveLedger.AI.Services.Ollama/CognitiveLedger.AI.Services.Ollama.csproj" />
   <Project Path="CognitiveLedger.Common/CognitiveLedger.Common.csproj" />
   <Project Path="CognitiveLedger.Data/CognitiveLedger.Data.csproj" />
   <Project Path="CognitiveLedger.Parser.PDF/CognitiveLedger.Parser.PDF.csproj" />

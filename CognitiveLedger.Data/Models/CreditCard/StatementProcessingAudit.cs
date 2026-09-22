@@ -7,6 +7,8 @@ namespace CognitiveLedger.Data.Models.CreditCard;
 
 public sealed class StatementProcessingAudit : AuditableModelBase
 {
+    public long UserId { get; init; }
+    public User User { get; init; } = null!;
     public long? StatementId { get; set; }
     public CreditCardStatement? Statement { get; init; }
     [MaxLength(255)]

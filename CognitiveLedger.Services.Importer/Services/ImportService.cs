@@ -94,7 +94,10 @@ public sealed class ImportService : IImportService
 
         // Step 1: Check whether this source document has already been imported.
         var existingStatement = await _statementRepository
-            .FindBySourceDocumentSha256Async(sourceDocumentSha256, cancellationToken);
+            .FindBySourceDocumentSha256Async(
+                request.UserId,
+                sourceDocumentSha256,
+                cancellationToken);
 
         if (existingStatement is not null)
         {
@@ -102,6 +105,7 @@ public sealed class ImportService : IImportService
         }
         
         var audit = await StartProcessingAuditAsync(
+            request.UserId,
             request.StatementType,
             request.FileName,
             cancellationToken);
@@ -146,11 +150,13 @@ public sealed class ImportService : IImportService
     }
 
     private Task<StatementProcessingAudit> StartProcessingAuditAsync(
+        long userId,
         StatementType statementType,
         string filename,
         CancellationToken cancellationToken) =>
         _processingRepository.StartAsync(new StatementProcessingAudit
         {
+            UserId = userId,
             Filename = filename,
             StatementTypeId = statementType switch
             {

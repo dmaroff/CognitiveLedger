@@ -7,6 +7,7 @@ namespace CognitiveLedger.Data.Repositories;
 public interface IStatementRepository
 {
     Task<CreditCardStatement?> FindBySourceDocumentSha256Async(
+        long userId,
         string sourceDocumentSha256,
         CancellationToken cancellationToken = default);
 

@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
 using CognitiveLedger.Data.Models.Base;
-using CognitiveLedger.Data.Models;
 using CognitiveLedger.Common.Types;
 
 namespace CognitiveLedger.Data.Models.CreditCard;
 
 public sealed class CreditCardStatement : AuditableModelBase
 {
+    public long UserId { get; init; }
+    public User User { get; init; } = null!;
     public long StatementTypeId { get; init; } = StatementTypeCatalog.CreditCardId;
     public StatementType? StatementType { get; init; }
     public string? SourceDocumentSha256 { get; init; }

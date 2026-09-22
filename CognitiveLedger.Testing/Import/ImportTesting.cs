@@ -2,7 +2,6 @@
 using CognitiveLedger.AI.OpenAI;
 using CognitiveLedger.AI.OpenAI.Request;
 using CognitiveLedger.AI.OpenAI.Response;
-using CognitiveLedger.AI.OpenAI.StatementDefinitions;
 using CognitiveLedger.Common;
 using CognitiveLedger.Data.Database;
 using CognitiveLedger.Data.Models;
@@ -21,10 +20,12 @@ using DataProcessingAudit = CognitiveLedger.Data.Models.CreditCard.StatementProc
 using DataStatement = CognitiveLedger.Data.Models.CreditCard.CreditCardStatement;
 using DataTransaction = CognitiveLedger.Data.Models.CreditCard.CreditCardTransaction;
 
-namespace CognitiveLedger.UnitTests;
+namespace CognitiveLedger.Testing;
 
 public class Tests
 {
+    private const long TestUserId = UserCatalog.SystemUserId;
+
     [Test]
     public async Task SanitizePiiAsync_PdfWithDetectedPii_ReturnsImageOnlyPdf()
     {
@@ -125,7 +126,7 @@ public class Tests
         var processingRepository = new StatementProcessingRepository(dbContext);
 
         var existingStatement = await statementRepository
-            .FindBySourceDocumentSha256Async(sourceDocumentSha256);
+            .FindBySourceDocumentSha256Async(TestUserId, sourceDocumentSha256);
 
         if (existingStatement is not null)
         {
@@ -150,6 +151,7 @@ public class Tests
         var audit = await processingRepository.StartAsync(
             new DataProcessingAudit
             {
+                UserId = TestUserId,
                 Filename = Path.GetFileName(pdfPath),
                 StatementTypeId = StatementTypeCatalog.CreditCardId,
                 AiProviderId = AiProviderCatalog.OpenAiId,
@@ -167,7 +169,7 @@ public class Tests
             });
 
             savedStatement = await statementRepository.InsertStatementAsync(
-                MapToDataStatement(result, sourceDocumentSha256));
+                MapToDataStatement(TestUserId, result, sourceDocumentSha256));
 
             audit = await processingRepository.CompleteAsync(
                 audit.Id,
@@ -184,7 +186,7 @@ public class Tests
         
         using (Assert.EnterMultipleScope())
         {
-            var stmt = result.Statement;
+            var stmt = result.Statement!;
             Assert.That(stmt.Transactions, Is.Not.Empty);
             Assert.That(stmt.Transactions.Any(t => string.IsNullOrEmpty(t.Description)), Is.False);
             Assert.That(stmt.Transactions.All(t => t.Amount > 0), Is.True);
@@ -252,7 +254,7 @@ public class Tests
         ArgumentNullException.ThrowIfNull(result);
 
         var logger = TestLogging.CreateLogger<Tests>();
-        var statement = result.Statement;
+        var statement = result.Statement!;
 
         logger.LogInformation(
             "Logging {TransactionCount} extracted transactions",
@@ -274,14 +276,16 @@ public class Tests
     }
 
     private static DataStatement MapToDataStatement(
+        long userId,
         ExtractPdfStatementResponse result,
         string sourceDocumentSha256)
     {
         ArgumentNullException.ThrowIfNull(result);
-        var statement = result.Statement;
+        var statement = result.Statement!;
 
         return new DataStatement
         {
+            UserId = userId,
             SourceDocumentSha256 = sourceDocumentSha256,
             Issuer = statement.Issuer,
             AccountName = statement.AccountName,

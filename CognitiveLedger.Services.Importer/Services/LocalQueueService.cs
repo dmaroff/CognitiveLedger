@@ -132,7 +132,10 @@ public sealed class LocalQueueService : ILocalQueueService
         
         var savedStatement = await PersistStatementAsync(
             statementRepository,
-            MapToCreditCardStatement(statementResponse, sourceDocumentSha256),
+            MapToCreditCardStatement(
+                request.UserId,
+                statementResponse,
+                sourceDocumentSha256),
             cancellationToken);
         
         await CompleteProcessingAuditAsync(
@@ -239,6 +242,7 @@ public sealed class LocalQueueService : ILocalQueueService
     };
     
     private static CreditCardStatement MapToCreditCardStatement(
+        long userId,
         ExtractPdfStatementResponse result,
         string sourceDocumentSha256)
     {
@@ -247,6 +251,7 @@ public sealed class LocalQueueService : ILocalQueueService
 
         return new CreditCardStatement
         {
+            UserId = userId,
             SourceDocumentSha256 = sourceDocumentSha256,
             Issuer = statement.Issuer,
             AccountName = statement.AccountName,
