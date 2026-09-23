@@ -5,7 +5,8 @@ namespace CognitiveLedger.Agents;
 
 public sealed class LedgerAgent(
     IChatClient chatClient,
-    IAgentToolProvider toolProvider) : ILedgerAgent
+    IAgentToolProvider toolProvider,
+    IAgentToolExecutionRecorder toolExecutionRecorder) : ILedgerAgent
 {
     private const string Instructions = """
         You are CognitiveLedger, a careful personal-finance assistant.
@@ -37,6 +38,7 @@ public sealed class LedgerAgent(
             throw new ArgumentException("A message is required.", nameof(request));
         }
 
+        toolExecutionRecorder.Reset();
         var tools = await toolProvider.GetToolsAsync(cancellationToken);
         var response = await chatClient.GetResponseAsync(
             [
@@ -64,7 +66,8 @@ public sealed class LedgerAgent(
         return new AgentResponse
         {
             ConversationId = request.ConversationId,
-            Answer = response.Text.Trim()
+            Answer = response.Text.Trim(),
+            ToolExecutions = [.. toolExecutionRecorder.Executions]
         };
     }
 
