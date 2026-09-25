@@ -1,33 +1,65 @@
+using CognitiveLedger.Common;
 using CognitiveLedger.Data.DependencyInjection;
 using CognitiveLedger.Services.LedgerMcp.Security;
+using CognitiveLedger.Services.LedgerMcp.Tools.GetAccountOverview;
 using CognitiveLedger.Services.LedgerMcp.Tools.SearchTransactions;
+using CognitiveLedger.Services.LedgerMcp.Tools.SummarizeTransactions;
 using ModelContextProtocol.AspNetCore;
+using Serilog;
 
-var builder = WebApplication.CreateBuilder(args);
+namespace CognitiveLedger.Services.LedgerMcp;
 
-if (builder.Environment.IsDevelopment())
+public static class Program
 {
-    builder.Configuration.AddJsonFile(
-        "appsettings.local.json",
-        optional: true,
-        reloadOnChange: true);
-}
-
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddCognitiveLedgerData(builder.Configuration);
-builder.Services.AddScoped<ICurrentUserContext, CurrentUserContext>();
-builder.Services.AddScoped<ITransactionSearchQuery, TransactionSearchQuery>();
-
-builder.Services
-    .AddMcpServer()
-    .WithHttpTransport(options =>
+    public static void Main(string[] args)
     {
-        options.SessionMode = HttpServerSessionMode.Stateless;
-    })
-    .WithToolsFromAssembly();
+        var builder = WebApplication.CreateBuilder(args);
 
-var app = builder.Build();
+        if (builder.Environment.IsDevelopment())
+        {
+            builder.Configuration.AddJsonFile(
+                "appsettings.local.json",
+                optional: true,
+                reloadOnChange: true);
+        }
 
-app.MapMcp("/mcp");
+        builder.Services.AddTransient(typeof(AppLog<>));
+        
+        builder.Services.AddSerilog((services, configuration) =>
+        {
+            configuration
+                .ReadFrom.Configuration(builder.Configuration)
+                .ReadFrom.Services(services)
+                .Enrich.FromLogContext();
+        });
 
-app.Run();
+        builder.Services.AddHttpContextAccessor();
+        builder.Services.AddCognitiveLedgerData(builder.Configuration);
+        builder.Services.AddScoped<ICurrentUserContext, CurrentUserContext>();
+        builder.Services.AddScoped<IAccountOverviewQuery, AccountOverviewQuery>();
+        builder.Services.AddScoped<ITransactionSearchQuery, TransactionSearchQuery>();
+        builder.Services.AddScoped<ITransactionSummaryQuery, TransactionSummaryQuery>();
+
+        builder.Services
+            .AddMcpServer()
+            .WithHttpTransport(options => { options.SessionMode = HttpServerSessionMode.Stateless; })
+            .WithToolsFromAssembly();
+
+        var app = builder.Build();
+
+        app.MapMcp("/mcp");
+
+        app.Lifetime.ApplicationStarted.Register(() =>
+        {
+            var urls = app.Urls.Count > 0
+                ? string.Join(", ", app.Urls)
+                : "unknown";
+
+            app.Logger.LogInformation(
+                "CognitiveLedger.Services.LedgerMcp is listening at {Urls}",
+                urls);
+        });
+        
+        app.Run();
+    }
+}

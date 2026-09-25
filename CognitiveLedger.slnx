@@ -9,8 +9,11 @@
     <Project Path="CognitiveLedger.Services.LedgerMcp/CognitiveLedger.Services.LedgerMcp.csproj" />
   </Folder>
   <Folder Name="/Testing/">
-    <Project Path="CognitiveLedger.TestApp/CognitiveLedger.TestApp.csproj" />
     <Project Path="CognitiveLedger.Testing\CognitiveLedger.Testing.csproj" />
+  </Folder>
+  <Folder Name="/Tools/">
+    <Project Path="CognitiveLedger.AgentCli/CognitiveLedger.AgentCli.csproj" />
+    <Project Path="CognitiveLedger.Importer/CognitiveLedger.Importer.csproj" />
   </Folder>
   <Project Path="CognitiveLedger.Common/CognitiveLedger.Common.csproj" />
   <Project Path="CognitiveLedger.Data/CognitiveLedger.Data.csproj" />

@@ -5,6 +5,7 @@ using OllamaSharp.Models.Exceptions;
 
 namespace CognitiveLedger.Services.Agents.Api.Endpoints;
 
+
 public static class AgentEndpoints
 {
     public static IEndpointRouteBuilder MapAgentEndpoints(this IEndpointRouteBuilder endpoints)
@@ -35,6 +36,7 @@ public static class AgentEndpoints
 
         using var timeoutCts = new CancellationTokenSource(
             TimeSpan.FromSeconds(options.Value.RequestTimeoutSeconds));
+        
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
             timeoutCts.Token);
@@ -44,7 +46,7 @@ public static class AgentEndpoints
             var response = await agent.RunAsync(
                 new AgentRequest
                 {
-                    UserId = options.Value.DevelopmentUserId,
+                    UserId = (int)options.Value.DevelopmentUserId,
                     Message = request.Message,
                     ConversationId = request.ConversationId
                 },

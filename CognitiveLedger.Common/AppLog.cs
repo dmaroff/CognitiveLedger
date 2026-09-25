@@ -131,10 +131,10 @@ public sealed class AppLog<T>(ILogger<T> logger) : ILogger<T>
     {
         ArgumentNullException.ThrowIfNull(logger);
         logger.LogError(
-            "{ClassName}::{MethodName} ==> {Text}",
+            ex,
+            "{ClassName}::{MethodName}",
             typeof(T).Name,
-            methodName,
-            ex);
+            methodName);
     }
     
     public void LogError(
@@ -144,11 +144,12 @@ public sealed class AppLog<T>(ILogger<T> logger) : ILogger<T>
     {
         ArgumentNullException.ThrowIfNull(logger);
         logger.LogError(
+            ex,
             "{ClassName}::{MethodName} ==> [{Request}] => {Text}",
             typeof(T).Name,
             methodName,
             request,
-            ex);
+            "");
     }
 
     public IDisposable? BeginScope<TState>(TState state)

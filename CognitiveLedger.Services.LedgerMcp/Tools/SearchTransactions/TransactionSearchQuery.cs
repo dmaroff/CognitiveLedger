@@ -1,21 +1,34 @@
+using CognitiveLedger.Common;
 using CognitiveLedger.Data.Database;
-using CognitiveLedger.Data.Models.CreditCard;
 using Microsoft.EntityFrameworkCore;
 
 namespace CognitiveLedger.Services.LedgerMcp.Tools.SearchTransactions;
 
-public sealed class TransactionSearchQuery(CognitiveLedgerDbContext dbContext)
-    : ITransactionSearchQuery
+public sealed class TransactionSearchQuery : ITransactionSearchQuery
 {
+
+    private readonly CognitiveLedgerDbContext _dbContext;
+    private readonly AppLog<TransactionSearchQuery> _logger;
+
+    public TransactionSearchQuery(
+        CognitiveLedgerDbContext dbContext,
+        AppLog<TransactionSearchQuery> logger)
+    {
+        _dbContext = dbContext;
+        _logger = logger;
+    }
+    
     public async Task<SearchTransactionsResult> SearchAsync(
-        long userId,
-        SearchTransactionsArguments arguments,
+        SearchTransactionsRequest request,
         CancellationToken cancellationToken = default)
     {
+        _logger.LogMethodStart(request);
+        var (userId, arguments) = (request.UserId, request.Arguments);
+        
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(userId);
         ArgumentNullException.ThrowIfNull(arguments);
 
-        var query = dbContext.Transactions
+        var query = _dbContext.Transactions
             .AsNoTracking()
             .Where(transaction => transaction.Statement.UserId == userId);
 
@@ -104,6 +117,7 @@ public sealed class TransactionSearchQuery(CognitiveLedgerDbContext dbContext)
             })
             .ToArrayAsync(cancellationToken);
 
+        _logger.LogMethodEnd(request);
         return new SearchTransactionsResult
         {
             TotalMatches = totalMatches,

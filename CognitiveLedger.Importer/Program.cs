@@ -1,7 +1,7 @@
 ﻿using System.Net.Http.Json;
 using System.Text.Json;
 
-namespace CognitiveLedger.TestApp;
+namespace CognitiveLedger.Importer;
 
 internal static class Program
 {

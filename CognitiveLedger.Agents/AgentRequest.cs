@@ -1,8 +1,9 @@
+using CognitiveLedger.Common.Request;
+
 namespace CognitiveLedger.Agents;
 
-public sealed record AgentRequest
+public sealed class AgentRequest : RequestBase
 {
-    public required long UserId { get; init; }
     public required string Message { get; init; }
     public string? ConversationId { get; init; }
 }

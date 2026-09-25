@@ -3,27 +3,27 @@ using CognitiveLedger.Services.LedgerMcp.Security;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
-namespace CognitiveLedger.Services.LedgerMcp.Tools.SearchTransactions;
+namespace CognitiveLedger.Services.LedgerMcp.Tools.SummarizeTransactions;
 
 [McpServerToolType]
-public static class SearchTransactionsTool
+public static class SummarizeTransactionsTool
 {
-    private const int MaximumResultLimit = 100;
+    private const int MaximumGroupLimit = 50;
 
     [McpServerTool(
-        Name = "search_transactions",
-        Title = "Search transactions",
+        Name = "summarize_transactions",
+        Title = "Summarize transactions",
         ReadOnly = true,
         Destructive = false,
         Idempotent = true,
         OpenWorld = false,
         UseStructuredContent = true)]
     [Description(
-        "Search the current user's imported ledger transactions using optional merchant, " +
-        "description, category, issuer, account, date, amount, and credit filters.")]
-    public static Task<SearchTransactionsResult> SearchAsync(
+        "Calculate authoritative charge, credit, and net-spending totals for the current user's " +
+        "transactions. Optionally group the summary by category, merchant, account, issuer, or month.")]
+    public static Task<SummarizeTransactionsResult> SummarizeAsync(
         ICurrentUserContext currentUser,
-        ITransactionSearchQuery transactionSearchQuery,
+        ITransactionSummaryQuery transactionSummaryQuery,
         [Description("Merchant name or partial merchant name.")]
         string? merchant = null,
         [Description("Text contained in the transaction description.")]
@@ -42,22 +42,15 @@ public static class SearchTransactionsTool
         decimal? minimumAmount = null,
         [Description("Inclusive maximum transaction amount.")]
         decimal? maximumAmount = null,
-        [Description("True for credits, false for charges, or omit for both.")]
-        bool? isCredit = null,
-        [Description("Maximum number of matching transactions to return, from 1 through 100.")]
-        int? limit = null,
+        [Description("Optional grouping: category, merchant, account, issuer, or month.")]
+        string? groupBy = null,
+        [Description("Maximum number of groups to return, from 1 through 50. Defaults to 10.")]
+        int? groupLimit = null,
         CancellationToken cancellationToken = default)
     {
         if (!currentUser.TryGetUserId(out var userId))
         {
-            throw new McpException("An authenticated user is required to search transactions.");
-        }
-
-        var resultLimit = limit ?? 25;
-
-        if (resultLimit is < 1 or > MaximumResultLimit)
-        {
-            throw new McpException($"Limit must be between 1 and {MaximumResultLimit}.");
+            throw new McpException("An authenticated user is required to summarize transactions.");
         }
 
         if (fromDate > toDate)
@@ -70,12 +63,19 @@ public static class SearchTransactionsTool
             throw new McpException("MinimumAmount cannot be greater than MaximumAmount.");
         }
 
-        return transactionSearchQuery.SearchAsync(
-            new SearchTransactionsRequest
+        var normalizedGroupBy = NormalizeGroupBy(groupBy);
+        var resultGroupLimit = groupLimit ?? 10;
+
+        if (resultGroupLimit is < 1 or > MaximumGroupLimit)
+        {
+            throw new McpException($"GroupLimit must be between 1 and {MaximumGroupLimit}.");
+        }
+
+        return transactionSummaryQuery.SummarizeAsync(
+            new SummarizeTransactionsRequest
             {
-                UserId = (int)userId,
-                Arguments = 
-                new SearchTransactionsArguments
+                UserId = checked((int)userId),
+                Arguments = new SummarizeTransactionsArguments
                 {
                     Merchant = merchant,
                     Description = description,
@@ -86,11 +86,26 @@ public static class SearchTransactionsTool
                     ToDate = toDate,
                     MinimumAmount = minimumAmount,
                     MaximumAmount = maximumAmount,
-                    IsCredit = isCredit,
-                    Limit = resultLimit
+                    GroupBy = normalizedGroupBy,
+                    GroupLimit = resultGroupLimit
                 }
             },
-            cancellationToken
-        );
+            cancellationToken);
+    }
+
+    private static string? NormalizeGroupBy(string? groupBy)
+    {
+        if (string.IsNullOrWhiteSpace(groupBy))
+        {
+            return null;
+        }
+
+        var normalized = groupBy.Trim().ToLowerInvariant();
+        normalized = normalized == "accountname" ? "account" : normalized;
+
+        return normalized is "category" or "merchant" or "account" or "issuer" or "month"
+            ? normalized
+            : throw new McpException(
+                "GroupBy must be category, merchant, account, issuer, month, or omitted.");
     }
 }

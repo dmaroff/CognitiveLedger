@@ -10,4 +10,8 @@
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.8.3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\CognitiveLedger.Common\CognitiveLedger.Common.csproj" />
+  </ItemGroup>
+
 </Project>
