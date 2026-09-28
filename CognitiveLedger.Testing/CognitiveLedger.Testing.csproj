@@ -29,8 +29,10 @@
 
     <ItemGroup>
         <ProjectReference Include="..\CognitiveLedger.AI\CognitiveLedger.AI.csproj" />
+        <ProjectReference Include="..\CognitiveLedger.Agents\CognitiveLedger.Agents.csproj" />
         <ProjectReference Include="..\CognitiveLedger.Data\CognitiveLedger.Data.csproj" />
         <ProjectReference Include="..\CognitiveLedger.Parser.PDF\CognitiveLedger.Parser.PDF.csproj" />
+        <ProjectReference Include="..\CognitiveLedger.Privacy\CognitiveLedger.Privacy.csproj" />
     </ItemGroup>
 
     <ItemGroup>

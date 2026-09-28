@@ -47,7 +47,7 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
         SanitizePiiRequest request,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogMethodStart();
+        _logger.LogMethodStart(request);
         ValidateRequest(request);
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -66,11 +66,13 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
             PdfText = extractedText
         };
 
-        var piiDetectionItems = request.PiiValues.Count > 0
+        var piiValues = GetPiiValues(request);
+
+        var piiDetectionItems = piiValues.Count > 0
             ? _piiDetector.DetectPii2(new DetectPii2Request
             {
                 FullText = extractedText.FullText,
-                PiiValues = request.PiiValues
+                PiiValues = piiValues
             }).PiiItems
             : _piiDetector.DetectPii(detectRequest).PiiItems;
 
@@ -79,7 +81,7 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
             PiiItems = piiDetectionItems
         };
 
-        _logger.LogInfo($"PII detection completed with {piiDetection.PiiItems.Count} items");
+        _logger.LogInfo(request, $"PII detection completed with {piiDetection.PiiItems.Count} items");
 
         if (!piiDetection.PiiDetected)
         {
@@ -94,8 +96,10 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
         var redactionResponse = _pdfRedactor.RedactPdf(
             new RedactPdfRequest
             {
+                UserId = request.UserId,
                 PdfData = request.PdfData,
-                PiiItems = piiDetection.PiiItems
+                PiiItems = piiDetection.PiiItems,
+                Replacements = [.. request.Replacements]
             });
 
         ValidateRedactionResponse(redactionResponse);
@@ -111,11 +115,13 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
 
         VerifyRedactions(
             piiDetection.PiiItems,
+            request.Replacements,
             verificationText);
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        _logger.LogMethodEnd();
+        _logger.LogMethodEnd(request);
+        
         return Task.FromResult(CreateRasterizedResponse(
             redactionResponse.PdfData,
             PiiDetectionStatus.DetectedAndRemoved,
@@ -168,6 +174,20 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
         }
     }
 
+    private static IList<string> GetPiiValues(
+        SanitizePiiRequest request)
+    {
+        if (request.Replacements.Count > 0)
+        {
+            return
+            [
+                .. request.Replacements
+                    .Select(replacement => replacement.OriginalValue)
+            ];
+        }
+        return [.. request.PiiValues];
+    }
+
     private static void ValidateRedactionResponse(
         RedactPdfResponse response)
     {
@@ -187,9 +207,11 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
 
     private static void VerifyRedactions(
         IReadOnlyList<PiiItem> piiItems,
+        IList<PdfTextReplacement> replacements,
         ExtractPdfTextResponse verificationText)
     {
         ArgumentNullException.ThrowIfNull(piiItems);
+        ArgumentNullException.ThrowIfNull(replacements);
         ArgumentNullException.ThrowIfNull(verificationText);
 
         foreach (var piiItem in piiItems)
@@ -207,6 +229,28 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
                     $"PII redaction verification failed. " +
                     $"A value classified as '{piiItem.Type}' " +
                     "is still present in the resulting PDF.");
+            }
+
+            var replacement = replacements.FirstOrDefault(candidate =>
+                string.Equals(
+                    candidate.OriginalValue,
+                    piiItem.Value,
+                    StringComparison.OrdinalIgnoreCase));
+
+            if (replacement is null)
+            {
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(replacement.ReplacementValue) ||
+                !verificationText.FullText.Contains(
+                    replacement.ReplacementValue,
+                    StringComparison.Ordinal))
+            {
+                throw new PdfPiiRedactionException(
+                    "PII replacement verification failed. " +
+                    $"The replacement token for a value classified as '{piiItem.Type}' " +
+                    "is missing from the resulting PDF.");
             }
         }
     }

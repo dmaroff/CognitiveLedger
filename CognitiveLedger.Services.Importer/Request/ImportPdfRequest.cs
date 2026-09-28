@@ -15,6 +15,4 @@ public sealed class ImportPdfRequest : RequestBase
     public string BankName { get; init; } = string.Empty;
 
     public StatementType StatementType { get; init; } = StatementType.Unknown;
-
-    public string[] PiiToRedact { get; init; } = [];
 }

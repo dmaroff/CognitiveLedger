@@ -13,11 +13,9 @@ internal static class Program
     public static async Task Main(string[] args)
     {
         var settings = LoadSettings();
-        using var httpClient = new HttpClient
-        {
-            BaseAddress = new Uri(settings.AgentsApi.Url.TrimEnd('/') + "/"),
-            Timeout = TimeSpan.FromSeconds(settings.AgentsApi.TimeoutSeconds)
-        };
+        using var httpClient = new HttpClient();
+        httpClient.BaseAddress = new Uri(settings.AgentsApi.Url.TrimEnd('/') + "/");
+        httpClient.Timeout = TimeSpan.FromSeconds(settings.AgentsApi.TimeoutSeconds);
 
         Console.WriteLine("CognitiveLedger Agent CLI");
         Console.WriteLine($"Agents API: {httpClient.BaseAddress}");

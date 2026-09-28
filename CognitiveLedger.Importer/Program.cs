@@ -47,8 +47,7 @@ internal static class Program
 
             await ImportPdfAsync(
                 httpClient,
-                pdfFiles[selectedNumber - 1],
-                settings.PiiToRedact);
+                pdfFiles[selectedNumber - 1]);
             Console.WriteLine();
         }
     }
@@ -96,8 +95,7 @@ internal static class Program
             {
                 appSettings = new AppSettings(
                     Importer: developmentSettings.Importer ?? appSettings.Importer,
-                    PdfFolder: developmentSettings.PdfFolder ?? appSettings.PdfFolder,
-                    PiiToRedact: developmentSettings.PiiToRedact ?? appSettings.PiiToRedact);
+                    PdfFolder: developmentSettings.PdfFolder ?? appSettings.PdfFolder);
             }
         }
 
@@ -117,12 +115,6 @@ internal static class Program
         {
             throw new InvalidOperationException(
                 "A non-empty PdfFolder value is required in appsettings.json.");
-        }
-
-        if (appSettings.PiiToRedact is null || !appSettings.PiiToRedact.All(string.IsNullOrEmpty))
-        {
-            throw new InvalidOperationException(
-                "At least one PiiToRedact value is required in appsettings.json.");
         }
 
         return appSettings;
@@ -163,8 +155,7 @@ internal static class Program
 
     private static async Task ImportPdfAsync(
         HttpClient httpClient,
-        string pdfPath,
-        string[] piiToRedact)
+        string pdfPath)
     {
         try
         {
@@ -175,8 +166,7 @@ internal static class Program
                 Base64PdfData: Convert.ToBase64String(await File.ReadAllBytesAsync(pdfPath)),
                 FileName: Path.GetFileName(pdfPath),
                 BankName: "Unknown",
-                StatementType: "CreditCard",
-                PiiToRedact: piiToRedact);
+                StatementType: "CreditCard");
 
             using var response = await httpClient.PostAsJsonAsync("api/parse/pdf", request, JsonOptions);
             var responseBody = await response.Content.ReadAsStringAsync();
@@ -225,18 +215,15 @@ internal static class Program
         string Base64PdfData,
         string FileName,
         string BankName,
-        string StatementType,
-        string[] PiiToRedact);
+        string StatementType);
 
     private sealed record AppSettings(
         ImporterSettings Importer,
-        string PdfFolder,
-        string[] PiiToRedact);
+        string PdfFolder);
 
     private sealed record AppSettingsOverride(
         ImporterSettings? Importer,
-        string? PdfFolder,
-        string[]? PiiToRedact);
+        string? PdfFolder);
 
     private sealed record ImporterSettings(string Url, int TimeoutSeconds);
 }

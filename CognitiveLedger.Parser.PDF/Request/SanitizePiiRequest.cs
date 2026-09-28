@@ -1,4 +1,5 @@
 using CognitiveLedger.Common.Request;
+using CognitiveLedger.Parser.PDF.Dtos;
 
 namespace CognitiveLedger.Parser.PDF.Request;
 
@@ -17,4 +18,10 @@ public sealed class SanitizePiiRequest : RequestBase
     /// they occur. When supplied, automatic PII detection is bypassed.
     /// </summary>
     public IList<string> PiiValues { get; init; } = [];
+
+    /// <summary>
+    /// Text values to replace in the PDF before it is rasterized and sent to
+    /// an external service.
+    /// </summary>
+    public IList<PdfTextReplacement> Replacements { get; init; } = [];
 }

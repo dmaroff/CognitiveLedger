@@ -2,6 +2,11 @@ namespace CognitiveLedger.AI.OpenAI.StatementDefinitions;
 
 public static class SynchronyAmazonStatementDefinition
 {
+    private const string PrivacyTokenInstruction =
+        " Values beginning with 'CL_' and ending with a numeric identifier are privacy " +
+        "tokens. Copy these values exactly into the matching response field. Do not alter, " +
+        "expand, interpret, or omit them.";
+
     public const string SummaryPrompt =
         "Read only the statement-level summary from this Synchrony Amazon credit-card " +
         "statement. Copy the issuer, account name, complete statement period, previous " +
@@ -14,7 +19,8 @@ public static class SynchronyAmazonStatementDefinition
         "negative only when the statement explicitly shows a credit balance. Ignore the bold " +
         "'Purchases and Other Debits' section total; purchases will be calculated from the " +
         "individual transaction rows. Use ISO " +
-        "YYYY-MM-DD dates. Do not infer dates or calculate summary values from transaction rows.";
+        "YYYY-MM-DD dates. Do not infer dates or calculate summary values from transaction rows." +
+        PrivacyTokenInstruction;
 
     public const string TransactionPrompt =
         "Extract every credit-card transaction row visible on this single Synchrony Amazon " +
@@ -36,7 +42,8 @@ public static class SynchronyAmazonStatementDefinition
         "transaction rows. A later page may continue the transaction table without repeating " +
         "the section or column headings; extract every visible ledger row on such continuation " +
         "pages and do not return an empty array merely because headings are absent. Verify each " +
-        "amount digit by digit, especially small statement credits.";
+        "amount digit by digit, especially small statement credits." +
+        PrivacyTokenInstruction;
 
     public static object SummarySchema { get; } = new
     {

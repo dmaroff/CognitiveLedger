@@ -15,6 +15,7 @@ public class CognitiveLedgerDbContext : DbContext
     }
 
     public DbSet<User> Users => Set<User>();
+    public DbSet<UserRedactionValue> UserRedactionValues => Set<UserRedactionValue>();
     public DbSet<CreditCardStatement> Statements => Set<CreditCardStatement>();
     public DbSet<CreditCardTransaction> Transactions => Set<CreditCardTransaction>();
     public DbSet<StatementProcessingAudit> ProcessingAudits => Set<StatementProcessingAudit>();
@@ -44,6 +45,25 @@ public class CognitiveLedgerDbContext : DbContext
                 IsActive = true,
                 IsDeleted = false
             });
+        });
+
+        modelBuilder.Entity<UserRedactionValue>(entity =>
+        {
+            entity.ToTable("user_redaction_value");
+            entity.Property(redactionValue => redactionValue.Value)
+                .IsRequired()
+                .HasMaxLength(1000);
+            entity.HasIndex(redactionValue =>
+                new
+                {
+                    redactionValue.UserId,
+                    redactionValue.IsActive,
+                    redactionValue.IsDeleted
+                });
+            entity.HasOne(redactionValue => redactionValue.User)
+                .WithMany(user => user.RedactionValues)
+                .HasForeignKey(redactionValue => redactionValue.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<CreditCardStatement>(entity =>

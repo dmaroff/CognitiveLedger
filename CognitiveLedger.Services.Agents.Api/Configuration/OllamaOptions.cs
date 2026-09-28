@@ -1,6 +1,6 @@
 namespace CognitiveLedger.Services.Agents.Api.Configuration;
 
-public sealed class LocalModelOptions
+public sealed class OllamaOptions
 {
     public const string SectionName = "Ollama";
 

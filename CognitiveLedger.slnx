@@ -18,4 +18,5 @@
   <Project Path="CognitiveLedger.Common/CognitiveLedger.Common.csproj" />
   <Project Path="CognitiveLedger.Data/CognitiveLedger.Data.csproj" />
   <Project Path="CognitiveLedger.Parser.PDF/CognitiveLedger.Parser.PDF.csproj" />
+  <Project Path="CognitiveLedger.Privacy/CognitiveLedger.Privacy.csproj" />
 </Solution>

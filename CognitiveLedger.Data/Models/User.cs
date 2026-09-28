@@ -24,6 +24,7 @@ public sealed class User : FullModelBase
 
     public ICollection<CreditCardStatement> Statements { get; init; } = [];
     public ICollection<StatementProcessingAudit> ProcessingAudits { get; init; } = [];
+    public ICollection<UserRedactionValue> RedactionValues { get; init; } = [];
 }
 
 public static class UserCatalog

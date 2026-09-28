@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using Anthropic;
 using CognitiveLedger.Agents;
 using CognitiveLedger.Common;
 using CognitiveLedger.Services.Agents.Api.Configuration;
@@ -63,17 +64,40 @@ public static class Program
             .ValidateOnStart();
 
         builder.Services
-            .AddOptions<LocalModelOptions>()
-            .Bind(builder.Configuration.GetSection(LocalModelOptions.SectionName))
+            .AddOptions<ChatModelOptions>()
+            .Bind(builder.Configuration.GetSection(ChatModelOptions.SectionName))
+            .Validate(options =>
+                    string.Equals(
+                        options.Provider,
+                        ChatModelOptions.AnthropicProvider,
+                        StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(
+                        options.Provider,
+                        ChatModelOptions.OllamaProvider,
+                        StringComparison.OrdinalIgnoreCase),
+                "ChatModel:Provider must be Anthropic or Ollama.")
+            .ValidateOnStart();
+
+        builder.Services
+            .AddOptions<OllamaOptions>()
+            .Bind(builder.Configuration.GetSection(OllamaOptions.SectionName))
             .Validate(options => options.Endpoint is { IsAbsoluteUri: true }, "Ollama:Endpoint must be an absolute URI.")
-            .Validate(options => !string.IsNullOrWhiteSpace(options.ModelName), "ModelName is required.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.ModelName), "Ollama:ModelName is required.")
+            .ValidateOnStart();
+
+        builder.Services
+            .AddOptions<AnthropicOptions>()
+            .Bind(builder.Configuration.GetSection(AnthropicOptions.SectionName))
+            .Validate(options =>
+                    !string.IsNullOrWhiteSpace(options.ModelName),
+                "Anthropic:ModelName is required.")
             .ValidateOnStart();
 
         builder.Services.AddScoped<IAgentToolExecutionRecorder, AgentToolExecutionRecorder>();
         builder.Services.AddHttpClient("Ollama", (serviceProvider, httpClient) =>
         {
             var modelOptions = serviceProvider
-                .GetRequiredService<IOptions<LocalModelOptions>>()
+                .GetRequiredService<IOptions<OllamaOptions>>()
                 .Value;
 
             httpClient.BaseAddress = modelOptions.Endpoint;
@@ -95,6 +119,12 @@ public static class Program
 
         app.Lifetime.ApplicationStarted.Register(() =>
         {
+            var chatModelOptions = app.Services
+                .GetRequiredService<IOptions<ChatModelOptions>>()
+                .Value;
+            var modelName = GetConfiguredModelName(
+                app.Services,
+                chatModelOptions.Provider);
             var urls = app.Urls.Count > 0
                 ? string.Join(", ", app.Urls)
                 : "unknown";
@@ -102,6 +132,10 @@ public static class Program
             app.Logger.LogInformation(
                 "CognitiveLedger.Services.Agents.Api is listening at {Urls}",
                 urls);
+            app.Logger.LogInformation(
+                "CognitiveLedger.Services.Agents.Api is using {Provider}/{ModelName}",
+                chatModelOptions.Provider,
+                modelName);
         });
 
         app.Run();
@@ -109,19 +143,13 @@ public static class Program
 
     private static IChatClient CreateChatClient(IServiceProvider serviceProvider)
     {
-        var modelOptions = serviceProvider.GetRequiredService<IOptions<LocalModelOptions>>().Value;
         var agentOptions = serviceProvider.GetRequiredService<IOptions<AgentApiOptions>>().Value;
         var executionRecorder = serviceProvider.GetRequiredService<IAgentToolExecutionRecorder>();
         var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
         var logger = serviceProvider.GetRequiredService<AppLog<ChatClientBuilder>>();
-        var ollamaHttpClient = serviceProvider
-            .GetRequiredService<IHttpClientFactory>()
-            .CreateClient("Ollama");
-        IChatClient ollamaClient = new OllamaApiClient(
-            ollamaHttpClient,
-            modelOptions.ModelName);
+        var providerClient = CreateProviderClient(serviceProvider);
 
-        return new ChatClientBuilder(ollamaClient)
+        return new ChatClientBuilder(providerClient)
             .UseFunctionInvocation(loggerFactory, functionOptions =>
             {
                 functionOptions.MaximumIterationsPerRequest = agentOptions.MaximumToolIterations;
@@ -135,6 +163,95 @@ public static class Program
                         cancellationToken);
             })
             .Build(serviceProvider);
+    }
+
+    private static IChatClient CreateProviderClient(IServiceProvider serviceProvider)
+    {
+        var options = serviceProvider
+            .GetRequiredService<IOptions<ChatModelOptions>>()
+            .Value;
+
+        if (string.Equals(
+                options.Provider,
+                ChatModelOptions.AnthropicProvider,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return CreateAnthropicClient(serviceProvider);
+        }
+
+        if (string.Equals(
+                options.Provider,
+                ChatModelOptions.OllamaProvider,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return CreateOllamaClient(serviceProvider);
+        }
+
+        throw new InvalidOperationException(
+            $"Chat provider '{options.Provider}' is not supported.");
+    }
+
+    private static string GetConfiguredModelName(
+        IServiceProvider serviceProvider,
+        string provider)
+    {
+        if (string.Equals(
+                provider,
+                ChatModelOptions.AnthropicProvider,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return serviceProvider
+                .GetRequiredService<IOptions<AnthropicOptions>>()
+                .Value.ModelName;
+        }
+
+        if (string.Equals(
+                provider,
+                ChatModelOptions.OllamaProvider,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return serviceProvider
+                .GetRequiredService<IOptions<OllamaOptions>>()
+                .Value.ModelName;
+        }
+
+        return "unknown";
+    }
+
+    private static IChatClient CreateAnthropicClient(IServiceProvider serviceProvider)
+    {
+        var options = serviceProvider
+            .GetRequiredService<IOptions<AnthropicOptions>>()
+            .Value;
+        var apiKey = string.IsNullOrWhiteSpace(options.ApiKey)
+            ? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")
+            : options.ApiKey;
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new InvalidOperationException(
+                "Anthropic:ApiKey or the ANTHROPIC_API_KEY environment variable is required " +
+                "when ChatModel:Provider is Anthropic.");
+        }
+
+        var client = new AnthropicClient
+        {
+            ApiKey = apiKey
+        };
+
+        return client.AsIChatClient(options.ModelName);
+    }
+
+    private static IChatClient CreateOllamaClient(IServiceProvider serviceProvider)
+    {
+        var options = serviceProvider
+            .GetRequiredService<IOptions<OllamaOptions>>()
+            .Value;
+        var httpClient = serviceProvider
+            .GetRequiredService<IHttpClientFactory>()
+            .CreateClient("Ollama");
+
+        return new OllamaApiClient(httpClient, options.ModelName);
     }
 
     private static async ValueTask<object?> InvokeFunctionAsync(

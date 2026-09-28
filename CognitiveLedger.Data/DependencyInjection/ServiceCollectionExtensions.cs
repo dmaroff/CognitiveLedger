@@ -29,6 +29,7 @@ public static class ServiceCollectionExtensions
             options.UseNpgsql(connectionString));
         services.AddScoped<IStatementRepository, StatementRepository>();
         services.AddScoped<IStatementProcessingRepository, StatementProcessingRepository>();
+        services.AddScoped<IUserRedactionValueRepository, UserRedactionValueRepository>();
 
         return services;
     }

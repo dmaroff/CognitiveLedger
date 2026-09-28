@@ -5,12 +5,11 @@ namespace CognitiveLedger.Services.Importer.Request;
 // Internal service request. The HTTP controller decodes its base64 payload to FileData.
 public sealed class ImportRequest : RequestBase
 {
-    public ImportFileType FileType { get; init; } = ImportFileType.Unknown;
+    public ImportFileType FileType { get; private init; } = ImportFileType.Unknown;
     public byte[] FileData { get; private init; } = [];
     public string FileName { get; private init; } = string.Empty;
     public string SourceName { get; private init; } = string.Empty;
     public StatementType StatementType { get; private init; } = StatementType.Unknown;
-    public string[] PiiToRedact { get; private init; } = [];
     
     public static explicit operator ImportRequest(ImportPdfRequest request) 
     { 
@@ -25,8 +24,7 @@ public sealed class ImportRequest : RequestBase
             FileName = request.FileName, 
             SourceName = request.BankName, 
             StatementType = request.StatementType, 
-            FileData = Convert.FromBase64String(request.Base64PdfData), 
-            PiiToRedact = request.PiiToRedact 
+            FileData = Convert.FromBase64String(request.Base64PdfData)
         }; 
     }
     
@@ -42,8 +40,7 @@ public sealed class ImportRequest : RequestBase
             FileName = request.FileName, 
             BankName = request.SourceName, 
             StatementType = request.StatementType, 
-            Base64PdfData = Convert.ToBase64String(request.FileData), 
-            PiiToRedact = request.PiiToRedact 
+            Base64PdfData = Convert.ToBase64String(request.FileData)
         }; 
     }
 
@@ -57,7 +54,6 @@ public sealed class ImportRequest : RequestBase
                $"FileName={FileName}, " +
                $"SourceName={SourceName}, " +
                $"StatementType={StatementType}, " +
-               $"FileDataLength={FileData.Length}, " +
-               $"PiiToRedactCount={PiiToRedact.Length}";
+               $"FileDataLength={FileData.Length}";
     }
 }

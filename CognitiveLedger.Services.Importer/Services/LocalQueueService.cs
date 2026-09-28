@@ -8,9 +8,11 @@ using CognitiveLedger.Common.Response;
 using CognitiveLedger.Data.Models.CreditCard;
 using CognitiveLedger.Data.Repositories;
 using CognitiveLedger.Parser.PDF;
+using CognitiveLedger.Parser.PDF.Dtos;
 using CognitiveLedger.Parser.PDF.Request;
 using CognitiveLedger.Parser.PDF.Response;
 using CognitiveLedger.Parser.PDF.Types;
+using CognitiveLedger.Privacy;
 using CognitiveLedger.Services.Importer.Exceptions;
 using CognitiveLedger.Services.Importer.Request;
 using CognitiveLedger.Services.Importer.Response;
@@ -101,6 +103,8 @@ public sealed class LocalQueueService : ILocalQueueService
         var statementRepository = scope.ServiceProvider.GetRequiredService<IStatementRepository>();
         var processingRepository = scope.ServiceProvider
             .GetRequiredService<IStatementProcessingRepository>();
+        var redactionValueRepository = scope.ServiceProvider
+            .GetRequiredService<IUserRedactionValueRepository>();
 
         ValidateConfiguration(config);
         var sourceDocumentSha256 = Convert.ToHexString(SHA256.HashData(request.FileData));
@@ -112,8 +116,40 @@ public sealed class LocalQueueService : ILocalQueueService
                 $"{request.StatementType} PDF imports are not configured yet.");
         }
         
-        
-        var sanitizePiiResponse = await SanitizePdfAsync(request, cancellationToken);
+        var redactionValues = await redactionValueRepository.GetActiveValuesAsync(
+            request.UserId,
+            cancellationToken);
+
+        if (redactionValues.Count == 0)
+        {
+            var exception = new ImportValidationException(
+                request,
+                "The user has no active PDF redaction values configured.");
+
+            await processingRepository.FailAsync(
+                auditId,
+                exception,
+                cancellationToken: cancellationToken);
+            _logger.LogWarning(request, exception.Message);
+
+            return new ImportResponse
+            {
+                Status = ResponseStatus.Failed,
+                ErrorCode = "REDACTION_VALUES_NOT_CONFIGURED",
+                ErrorMessage = "The user has no active PDF redaction values configured."
+            };
+        }
+
+        ITokenMap tokenMap = new TokenMap();
+        var replacements = CreateTokenReplacements(
+            redactionValues,
+            tokenMap);
+
+        var sanitizePiiResponse = await SanitizePdfAsync(
+            request,
+            redactionValues,
+            replacements,
+            cancellationToken);
 
         _logger.LogInfo(request,
             sanitizePiiResponse.PiiStatus == PiiDetectionStatus.DetectedAndRemoved
@@ -135,7 +171,8 @@ public sealed class LocalQueueService : ILocalQueueService
             MapToCreditCardStatement(
                 request.UserId,
                 statementResponse,
-                sourceDocumentSha256),
+                sourceDocumentSha256,
+                tokenMap),
             cancellationToken);
         
         await CompleteProcessingAuditAsync(
@@ -195,13 +232,36 @@ public sealed class LocalQueueService : ILocalQueueService
     // They are not invoked until extraction and validation are connected.
     private Task<SanitizePiiResponse> SanitizePdfAsync(
         ImportRequest request,
+        IReadOnlyList<string> redactionValues,
+        IReadOnlyList<PdfTextReplacement> replacements,
         CancellationToken cancellationToken) =>
         _piiSanitizer.SanitizePiiAsync(new SanitizePiiRequest
         {
             UserId = request.UserId,
             PdfData = request.FileData,
-            PiiValues = request.PiiToRedact
+            PiiValues = [.. redactionValues],
+            Replacements = [.. replacements]
         }, cancellationToken);
+
+    private static IReadOnlyList<PdfTextReplacement> CreateTokenReplacements(
+        IReadOnlyList<string> redactionValues,
+        ITokenMap tokenMap)
+    {
+        var replacements = new List<PdfTextReplacement>();
+        foreach (var redactionValue in redactionValues)
+        {
+            var token = tokenMap.Tokenize(
+                redactionValue,
+                TokenType.Value);
+
+            replacements.Add(new PdfTextReplacement
+            {
+                OriginalValue = redactionValue,
+                ReplacementValue = token
+            });
+        }
+        return replacements;
+    }
 
     private Task<CreditCardStatement> PersistStatementAsync(
         IStatementRepository statementRepository,
@@ -244,17 +304,19 @@ public sealed class LocalQueueService : ILocalQueueService
     private static CreditCardStatement MapToCreditCardStatement(
         long userId,
         ExtractPdfStatementResponse result,
-        string sourceDocumentSha256)
+        string sourceDocumentSha256,
+        ITokenMap tokenMap)
     {
         ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(tokenMap);
         var statement = result.Statement!;
 
         return new CreditCardStatement
         {
             UserId = userId,
             SourceDocumentSha256 = sourceDocumentSha256,
-            Issuer = statement.Issuer,
-            AccountName = statement.AccountName,
+            Issuer = tokenMap.Detokenize(statement.Issuer),
+            AccountName = tokenMap.Detokenize(statement.AccountName),
             StatementPeriodStart = statement.StatementPeriodStart,
             StatementPeriodEnd = statement.StatementPeriodEnd,
             PreviousBalance = statement.PreviousBalance,
@@ -268,9 +330,9 @@ public sealed class LocalQueueService : ILocalQueueService
                 .Select(transaction => new CreditCardTransaction
                 {
                     TransactionDate = transaction.Date,
-                    Category = transaction.Category,
-                    Merchant = transaction.Merchant,
-                    Description = transaction.Description,
+                    Category = tokenMap.Detokenize(transaction.Category),
+                    Merchant = tokenMap.Detokenize(transaction.Merchant),
+                    Description = tokenMap.Detokenize(transaction.Description),
                     Amount = transaction.Amount,
                     IsCredit = transaction.IsCredit
                 })]

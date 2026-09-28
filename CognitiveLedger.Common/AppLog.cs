@@ -4,7 +4,26 @@ using Microsoft.Extensions.Logging;
 
 namespace CognitiveLedger.Common;
 
-public sealed class AppLog<T>(ILogger<T> logger) : ILogger<T>
+
+public interface IAppLog<out T> : ILogger<T>
+{
+    void LogMethodStart([CallerMemberName] string methodName = "");
+    void LogMethodStart(RequestBase request, [CallerMemberName] string methodName = "");
+    void LogMethodEnd([CallerMemberName] string methodName = "");
+    void LogMethodEnd(RequestBase request, [CallerMemberName] string methodName = "");
+    void LogInfo(string text, [CallerMemberName] string methodName = "");
+    void LogInfo(RequestBase request, string text, [CallerMemberName] string methodName = "");
+    void LogInfo<TValue1, TValue2>(RequestBase request, string message, TValue1 value1, TValue2 value2, [CallerMemberName] string methodName = "");
+    void LogWarning(string text, [CallerMemberName] string methodName = "");
+    void LogWarning(RequestBase request, string text, [CallerMemberName] string methodName = "");
+    void LogError(string text, [CallerMemberName] string methodName = "");
+    void LogError(RequestBase request, string text, [CallerMemberName] string methodName = "");
+    void LogError(Exception ex, [CallerMemberName] string methodName = "");
+    void LogError(RequestBase request, Exception ex, [CallerMemberName] string methodName = "");
+}
+
+
+public sealed class AppLog<T>(ILogger<T> logger) : IAppLog<T>
 {
     private readonly ILogger<T> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
@@ -71,6 +90,22 @@ public sealed class AppLog<T>(ILogger<T> logger) : ILogger<T>
             methodName,
             request,
             text);
+    }
+    
+    public void LogInfo<TValue1, TValue2>(
+        RequestBase request,
+        string message,
+        TValue1 value1,
+        TValue2 value2,
+        [CallerMemberName] string methodName = "")
+    {
+        _logger.LogInformation(
+            "{ClassName}::{MethodName} ==> [{Request}] => " + message,
+            typeof(T).Name,
+            methodName,
+            request,
+            value1,
+            value2);
     }
     
     public void LogWarning(
