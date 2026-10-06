@@ -33,6 +33,9 @@
         <ProjectReference Include="..\CognitiveLedger.Data\CognitiveLedger.Data.csproj" />
         <ProjectReference Include="..\CognitiveLedger.Parser.PDF\CognitiveLedger.Parser.PDF.csproj" />
         <ProjectReference Include="..\CognitiveLedger.Privacy\CognitiveLedger.Privacy.csproj" />
+        <ProjectReference Include="..\CognitiveLedger.Services.Importer\CognitiveLedger.Services.Importer.csproj" />
+        <ProjectReference Include="..\CognitiveLedger.Statements.Abstractions\CognitiveLedger.Statements.Abstractions.csproj" />
+        <ProjectReference Include="..\CognitiveLedger.Statements.Definitions\CognitiveLedger.Statements.Definitions.csproj" />
     </ItemGroup>
 
     <ItemGroup>

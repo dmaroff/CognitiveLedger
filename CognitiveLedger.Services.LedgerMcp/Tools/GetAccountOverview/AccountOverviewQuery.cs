@@ -1,4 +1,5 @@
 using CognitiveLedger.Common;
+using CognitiveLedger.Common.Response;
 using CognitiveLedger.Data.Database;
 using Microsoft.EntityFrameworkCore;
 
@@ -71,6 +72,7 @@ public sealed class AccountOverviewQuery(
 
         var result = new GetAccountOverviewResult
         {
+            Status = ResponseStatus.Success,
             AccountCount = accounts.Length,
             TotalLatestStatementBalance = accounts.Sum(account =>
                 account.LatestStatementBalance),

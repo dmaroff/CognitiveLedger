@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using CognitiveLedger.Agents;
 using CognitiveLedger.Common;
+using CognitiveLedger.Privacy;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -16,7 +17,8 @@ public class LedgerAgentTests
             new AppLog<LedgerAgent>(NullLogger<LedgerAgent>.Instance),
             chatClient,
             new EmptyToolProvider(),
-            new AgentToolExecutionRecorder());
+            new AgentToolExecutionRecorder(),
+            new TokenMap());
 
         var response = await agent.RunAsync(new AgentRequest
         {

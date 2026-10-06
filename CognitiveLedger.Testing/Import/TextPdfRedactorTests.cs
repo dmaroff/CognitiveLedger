@@ -55,6 +55,51 @@ public class TextPdfRedactorTests
         }
     }
 
+    [Test]
+    public async Task RedactPdf_TaggedDiscoverStatement_UsesRasterizedFallback()
+    {
+        const string originalValue = "Discover";
+        const string replacementValue = "CL_VALUE_0001";
+        var pdfPath = FindRepositoryFile("Test", "Discover-Capital-One.pdf");
+        var inputPdf = await File.ReadAllBytesAsync(pdfPath);
+        var rasterizer = new PdfRasterizer(new NoOpAppLog<PdfRasterizer>());
+        var redactor = new TextPdfRedactor(
+            new NoOpAppLog<TextPdfRedactor>(),
+            rasterizer);
+
+        var response = redactor.RedactPdf(new RedactPdfRequest
+        {
+            UserId = 1,
+            PdfData = inputPdf,
+            PiiItems =
+            [
+                new PiiItem
+                {
+                    Type = PiiType.Unknown,
+                    Value = originalValue,
+                    PageNumber = 1,
+                    Bounds = []
+                }
+            ],
+            Replacements =
+            [
+                new PdfTextReplacement
+                {
+                    OriginalValue = originalValue,
+                    ReplacementValue = replacementValue
+                }
+            ]
+        });
+
+        var outputText = ExtractText(response.PdfData);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(outputText, Does.Not.Contain(originalValue).IgnoreCase);
+            Assert.That(outputText, Does.Contain(replacementValue));
+        }
+    }
+
     private static byte[] CreatePdf(string text)
     {
         using var outputStream = new MemoryStream();
@@ -81,5 +126,21 @@ public class TextPdfRedactorTests
         using var pdfDocument = new PdfDocument(new PdfReader(inputStream));
 
         return PdfTextExtractor.GetTextFromPage(pdfDocument.GetFirstPage());
+    }
+
+    private static string FindRepositoryFile(params string[] pathParts)
+    {
+        var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine([directory.FullName, .. pathParts]);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+            directory = directory.Parent;
+        }
+        throw new FileNotFoundException(
+            $"Could not find test PDF '{Path.Combine(pathParts)}'.");
     }
 }

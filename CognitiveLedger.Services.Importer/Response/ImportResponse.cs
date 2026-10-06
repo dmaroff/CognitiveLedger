@@ -5,6 +5,7 @@ namespace CognitiveLedger.Services.Importer.Response;
 
 public sealed class ImportResponse : ResponseBase
 {
-    public bool Existing { get; set; } = false;
-    public long StatementId { get; init; } = -1;
+    public bool Existing { get; init; }
+    public long? ProcessingAuditId { get; init; }
+    public long? StatementId { get; init; }
 }

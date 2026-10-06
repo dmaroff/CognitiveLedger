@@ -10,6 +10,7 @@
       <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
       <ProjectReference Include="..\CognitiveLedger.Common\CognitiveLedger.Common.csproj" />
       <ProjectReference Include="..\CognitiveLedger.Parser.PDF\CognitiveLedger.Parser.PDF.csproj" />
+      <ProjectReference Include="..\CognitiveLedger.Statements.Abstractions\CognitiveLedger.Statements.Abstractions.csproj" />
     </ItemGroup>
 
 </Project>

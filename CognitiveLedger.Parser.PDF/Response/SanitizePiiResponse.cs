@@ -14,6 +14,12 @@ public sealed class SanitizePiiResponse
     /// </summary>
     public required byte[] RasterizedPdfData { get; init; }
 
+    /// <summary>
+    /// Source text grouped by page after the same PII replacements applied to
+    /// the PDF. These page numbers correspond to the rasterized PDF pages.
+    /// </summary>
+    public required IReadOnlyList<PdfPageText> SanitizedPageText { get; init; }
+
     public required int PageCount { get; init; }
 
     public required int RasterizationDpi { get; init; }

@@ -5,6 +5,7 @@ using CognitiveLedger.Data.DependencyInjection;
 using CognitiveLedger.Parser.PDF.DependencyInjection;
 using CognitiveLedger.Parser.PDF.Interfaces;
 using CognitiveLedger.Services.Importer.Services;
+using CognitiveLedger.Statements.Definitions.DependencyInjection;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,14 +23,16 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 builder.Services.AddHttpClient();
-builder.Services.AddTransient(typeof(AppLog<>));
+builder.Services.AddTransient(typeof(IAppLog<>), typeof(AppLog<>));
 builder.Services.AddScoped<IAppConfiguration, AppConfiguration>();
 builder.Services.AddScoped<IOpenAiPdfStatementReader, OpenAiPdfStatementReader>();
 builder.Services.AddCognitiveLedgerData(builder.Configuration);
 builder.Services.AddSingleton<IPiiDetector, ProvidedValuePiiDetector>();
 builder.Services.AddCognitiveLedgerPdfParser();
+builder.Services.AddStatementDefinitions();
 
 builder.Services.AddSingleton<ILocalQueueService, LocalQueueService>();
+builder.Services.AddSingleton<IStatementDefinitionDetector, StatementDefinitionDetector>();
 builder.Services.AddScoped<IImportService, ImportService>();
 
 var app = builder.Build();

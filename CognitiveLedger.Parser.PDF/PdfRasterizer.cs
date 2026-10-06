@@ -20,9 +20,9 @@ namespace CognitiveLedger.Parser.PDF;
 /// </summary>
 public sealed class PdfRasterizer : IPdfRasterizer
 {
-    private readonly AppLog<PdfRasterizer> _logger;
+    private readonly IAppLog<PdfRasterizer> _logger;
 
-    public PdfRasterizer(AppLog<PdfRasterizer> logger)
+    public PdfRasterizer(IAppLog<PdfRasterizer> logger)
     {
         _logger = logger;
     }

@@ -11,8 +11,9 @@ public sealed class ImportPdfRequest : RequestBase
     [Required]
     public string FileName { get; init; } = string.Empty;
 
-    [Required]
     public string BankName { get; init; } = string.Empty;
+
+    public string? StatementDefinitionKey { get; init; }
 
     public StatementType StatementType { get; init; } = StatementType.Unknown;
 }

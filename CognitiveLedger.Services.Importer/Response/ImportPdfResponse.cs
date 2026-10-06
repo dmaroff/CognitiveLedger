@@ -4,6 +4,7 @@ namespace CognitiveLedger.Services.Importer.Response;
 
 public sealed class ImportPdfResponse : ResponseBase
 {
-    public Guid JobId { get; init; }
+    public bool Existing { get; init; }
+    public long? ProcessingAuditId { get; init; }
     public long? StatementId { get; init; }
 }

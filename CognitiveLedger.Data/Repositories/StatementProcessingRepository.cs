@@ -13,6 +13,21 @@ public sealed class StatementProcessingRepository(CognitiveLedgerDbContext dbCon
 {
     private const int MaximumErrorMessageLength = 4000;
 
+    public Task<StatementProcessingAudit?> FindAsync(
+        long processingAuditId,
+        long userId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(processingAuditId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(userId);
+
+        return dbContext.ProcessingAudits
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                audit => audit.Id == processingAuditId && audit.UserId == userId,
+                cancellationToken);
+    }
+
     public async Task<StatementProcessingAudit> StartAsync(
         StatementProcessingAudit audit,
         CancellationToken cancellationToken = default)

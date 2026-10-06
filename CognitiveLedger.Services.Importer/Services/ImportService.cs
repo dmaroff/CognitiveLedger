@@ -1,7 +1,4 @@
 using System.Security.Cryptography;
-using CognitiveLedger.AI.OpenAI;
-using CognitiveLedger.AI.OpenAI.Request;
-using CognitiveLedger.AI.OpenAI.Response;
 using CognitiveLedger.Common;
 using CognitiveLedger.Common.Response;
 using CognitiveLedger.Data.Repositories;
@@ -9,41 +6,41 @@ using CognitiveLedger.Data.Models.CreditCard;
 using CognitiveLedger.Common.Types;
 using AiModelCatalog = CognitiveLedger.Data.Models.AiModelCatalog;
 using AiProviderCatalog = CognitiveLedger.Data.Models.AiProviderCatalog;
-using CognitiveLedger.Parser.PDF;
-using CognitiveLedger.Parser.PDF.Interfaces;
-using CognitiveLedger.Parser.PDF.Response;
 using CognitiveLedger.Services.Importer.Request;
 using CognitiveLedger.Services.Importer.Response;
+using CognitiveLedger.Statements.Abstractions;
+using CognitiveLedger.Parser.PDF.Interfaces;
+using CognitiveLedger.Parser.PDF.Request;
 
 
 namespace CognitiveLedger.Services.Importer.Services;
 
 public sealed class ImportService : IImportService
 {
-    private readonly IPdfTextExtractor _extractor;
     private readonly IStatementRepository _statementRepository;
     private readonly IStatementProcessingRepository _processingRepository;
-    private readonly IPiiSanitizer _piiSanitizer;
-    private readonly IOpenAiPdfStatementReader _statementReader;
+    private readonly IStatementDefinitionResolver _definitionResolver;
+    private readonly IStatementDefinitionDetector _definitionDetector;
+    private readonly IPdfTextExtractor _pdfTextExtractor;
     private readonly IAppConfiguration _config;
     private readonly ILocalQueueService _localQueueService;
-    private readonly AppLog<ImportService> _logger;
+    private readonly IAppLog<ImportService> _logger;
 
     public ImportService(
-        IPdfTextExtractor extractor,
-        IPiiSanitizer piiSanitizer,
-        IOpenAiPdfStatementReader statementReader,
         IStatementRepository statementRepository,
         IStatementProcessingRepository processingRepository,
+        IStatementDefinitionResolver definitionResolver,
+        IStatementDefinitionDetector definitionDetector,
+        IPdfTextExtractor pdfTextExtractor,
         IAppConfiguration config,
         ILocalQueueService localQueueService,
-        AppLog<ImportService> logger)
+        IAppLog<ImportService> logger)
     {
-        _extractor = extractor;
-        _piiSanitizer = piiSanitizer;
-        _statementReader = statementReader;
         _statementRepository = statementRepository;
         _processingRepository = processingRepository;
+        _definitionResolver = definitionResolver;
+        _definitionDetector = definitionDetector;
+        _pdfTextExtractor = pdfTextExtractor;
         _config = config;
         _localQueueService = localQueueService;
         _logger = logger;
@@ -84,6 +81,22 @@ public sealed class ImportService : IImportService
                 "STATEMENT_TYPE_NOT_CONFIGURED",
                 $"{request.StatementType} PDF imports are not configured yet.");
         }
+
+        var definition = ResolveDefinition(request);
+
+        if (definition is null)
+        {
+            var hasExplicitDefinition = !string.IsNullOrWhiteSpace(
+                request.StatementDefinitionKey);
+            return NotConfigured(
+                hasExplicitDefinition
+                    ? "STATEMENT_DEFINITION_NOT_CONFIGURED"
+                    : "STATEMENT_DEFINITION_NOT_IDENTIFIED",
+                hasExplicitDefinition
+                    ? $"Statement definition '{request.StatementDefinitionKey}' is not configured."
+                    : "The statement could not be identified from its PDF content. " +
+                      "Provide a supported statement definition key.");
+        }
         
         var requestTimeoutSeconds = _config.AiRequestTimeoutSeconds;
         if (requestTimeoutSeconds <= 0)
@@ -110,43 +123,37 @@ public sealed class ImportService : IImportService
             request.FileName,
             cancellationToken);
         
-        _localQueueService.Enqueue(request, audit.Id);
-        return Success(audit.Id);
+        var identifiedRequest = request.WithStatementDefinitionKey(
+            definition.Descriptor.Key);
+        _localQueueService.Enqueue(identifiedRequest, audit.Id);
+        return Queued(audit.Id);
     }
 
-    private async Task<ExtractPdfStatementResponse> ReadStatementAsync(
-        int requestTimeoutSeconds,
-        SanitizePiiResponse sanitizePiiResponse)
+    private IStatementDefinition? ResolveDefinition(ImportRequest request)
     {
-        try
+        var statementKind = request.StatementType.ToStatementKind();
+        if (!string.IsNullOrWhiteSpace(request.StatementDefinitionKey))
         {
-            var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(requestTimeoutSeconds));
-            var extractedStatement = await _statementReader.ExtractAsync(
-                new SynchronyAmazonStatementRequest
-                {
-                    PdfData = sanitizePiiResponse.RasterizedPdfData
-                },
-                tokenSource.Token);
-            return extractedStatement;
+            return _definitionResolver.Resolve(new StatementDefinitionSelector(
+                request.StatementDefinitionKey,
+                request.SourceName,
+                statementKind));
         }
-        catch (OperationCanceledException)
+
+        var extractedText = _pdfTextExtractor.ExtractPdfText(new ExtractPdfTextRequest
         {
-            _logger.LogError(
-                "OpenAI PDF statement extraction timed out after {TimeoutSeconds} seconds",
-                requestTimeoutSeconds);
-            return new ExtractPdfStatementResponse
-            {
-                Status = ResponseStatus.Failed,
-                ErrorCode = "OPENAI_TIMEOUT",
-                ErrorMessage = $"OpenAI PDF statement extraction timed out after {requestTimeoutSeconds} seconds.",
-                Statement = null
-            };
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e);
-            throw;
-        }
+            UserId = request.UserId,
+            PdfData = request.FileData
+        });
+
+        var detected = _definitionDetector.Detect(
+            extractedText.FullText,
+            statementKind);
+
+        return detected ?? _definitionResolver.Resolve(new StatementDefinitionSelector(
+            null,
+            request.SourceName,
+            statementKind));
     }
 
     private Task<StatementProcessingAudit> StartProcessingAuditAsync(
@@ -191,13 +198,14 @@ public sealed class ImportService : IImportService
     private static ImportResponse Existing(long statementId) => new()
     {
         Status = ResponseStatus.Success,
+        Existing = true,
         StatementId = statementId
     };
     
-    private static ImportResponse Success(long statementId) => new()
+    private static ImportResponse Queued(long processingAuditId) => new()
     {
         Status = ResponseStatus.Success,
-        StatementId = statementId
+        ProcessingAuditId = processingAuditId
     };
 
     private static void ValidateRequest(ImportRequest request)
@@ -218,11 +226,6 @@ public sealed class ImportService : IImportService
         if (string.IsNullOrWhiteSpace(request.FileName))
         {
             throw new ArgumentException("A file name is required.", nameof(request));
-        }
-
-        if (string.IsNullOrWhiteSpace(request.SourceName))
-        {
-            throw new ArgumentException("A source name is required.", nameof(request));
         }
 
         if (request.StatementType is StatementType.Unknown ||

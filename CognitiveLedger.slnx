@@ -19,4 +19,8 @@
   <Project Path="CognitiveLedger.Data/CognitiveLedger.Data.csproj" />
   <Project Path="CognitiveLedger.Parser.PDF/CognitiveLedger.Parser.PDF.csproj" />
   <Project Path="CognitiveLedger.Privacy/CognitiveLedger.Privacy.csproj" />
+  <Folder Name="/Statements/">
+    <Project Path="CognitiveLedger.Statements.Abstractions/CognitiveLedger.Statements.Abstractions.csproj" />
+    <Project Path="CognitiveLedger.Statements.Definitions/CognitiveLedger.Statements.Definitions.csproj" />
+  </Folder>
 </Solution>

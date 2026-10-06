@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using CognitiveLedger.Common;
+using CognitiveLedger.Privacy;
 using Microsoft.Extensions.AI;
 
 namespace CognitiveLedger.Agents;
@@ -12,6 +13,7 @@ public sealed class LedgerAgent : ILedgerAgent
     private readonly IChatClient _chatClient;
     private readonly IAgentToolProvider _toolProvider;
     private readonly IAgentToolExecutionRecorder _toolExecutionRecorder;
+    private readonly ITokenMap _tokenMap;
 
     private const string InstructionsTemplate = """
         You are CognitiveLedger, a careful personal-finance assistant.
@@ -44,12 +46,14 @@ public sealed class LedgerAgent : ILedgerAgent
         AppLog<LedgerAgent> logger,
         IChatClient chatClient,
         IAgentToolProvider toolProvider,
-        IAgentToolExecutionRecorder toolExecutionRecorder)
+        IAgentToolExecutionRecorder toolExecutionRecorder,
+        ITokenMap tokenMap)
     {
         _logger = logger;
         _chatClient = chatClient;
         _toolProvider = toolProvider;
         _toolExecutionRecorder = toolExecutionRecorder;
+        _tokenMap = tokenMap ?? throw new ArgumentNullException(nameof(tokenMap));
     }
 
     public async Task<AgentResponse> RunAsync(
@@ -77,10 +81,12 @@ public sealed class LedgerAgent : ILedgerAgent
         _logger.LogInfo(request, $"Done");
 
         _logger.LogInfo(request, $"Sending message to agent ...");
+        
         var instructions = string.Format(
             System.Globalization.CultureInfo.InvariantCulture,
             InstructionsTemplate,
             DateOnly.FromDateTime(DateTime.UtcNow));
+        
         var response = await _chatClient.GetResponseAsync(
             [
                 new ChatMessage(ChatRole.System, instructions),
@@ -93,6 +99,7 @@ public sealed class LedgerAgent : ILedgerAgent
                 MaxOutputTokens = MaximumOutputTokens
             },
             cancellationToken);
+        
         _logger.LogInfo(request, $"Done");
 
         var answer = response.Messages

@@ -16,13 +16,14 @@ using CognitiveLedger.Privacy;
 using CognitiveLedger.Services.Importer.Exceptions;
 using CognitiveLedger.Services.Importer.Request;
 using CognitiveLedger.Services.Importer.Response;
+using CognitiveLedger.Statements.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CognitiveLedger.Services.Importer.Services;
 
 public sealed class LocalQueueService : ILocalQueueService
 {
-    private readonly AppLog<LocalQueueService> _logger;
+    private readonly IAppLog<LocalQueueService> _logger;
     private readonly IPiiSanitizer _piiSanitizer;
     private readonly IServiceScopeFactory _scopeFactory;
     
@@ -31,7 +32,7 @@ public sealed class LocalQueueService : ILocalQueueService
     public LocalQueueService(
         IPiiSanitizer piiSanitizer,
         IServiceScopeFactory scopeFactory,
-        AppLog<LocalQueueService> logger)
+        IAppLog<LocalQueueService> logger)
     {
         _piiSanitizer = piiSanitizer;
         _scopeFactory = scopeFactory;
@@ -69,8 +70,18 @@ public sealed class LocalQueueService : ILocalQueueService
         {
             if (TryDequeue(out var queueItem))
             {
-                // Process the request here
-                await ProcessRequestAsync(queueItem!.AuditId, queueItem!.Request, cancellationToken);
+                try
+                {
+                    await ProcessRequestAsync(
+                        queueItem!.AuditId,
+                        queueItem.Request,
+                        cancellationToken);
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogError(queueItem!.Request, exception);
+                    await RecordUnexpectedFailureAsync(queueItem.AuditId, exception);
+                }
             }
             else
             {
@@ -78,6 +89,22 @@ public sealed class LocalQueueService : ILocalQueueService
             }
         }
         _logger.LogMethodEnd();
+    }
+
+    private async Task RecordUnexpectedFailureAsync(long auditId, Exception exception)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var processingRepository = scope.ServiceProvider
+                .GetRequiredService<IStatementProcessingRepository>();
+            await processingRepository.FailAsync(auditId, exception);
+        }
+        catch (Exception auditException)
+        {
+            _logger.LogError(
+                $"Unable to record failure for processing audit {auditId}: {auditException.Message}");
+        }
     }
     
     private static void ValidateConfiguration(IAppConfiguration config)
@@ -100,6 +127,8 @@ public sealed class LocalQueueService : ILocalQueueService
         using var scope = _scopeFactory.CreateScope();
         var config = scope.ServiceProvider.GetRequiredService<IAppConfiguration>();
         var statementReader = scope.ServiceProvider.GetRequiredService<IOpenAiPdfStatementReader>();
+        var definitionResolver = scope.ServiceProvider
+            .GetRequiredService<IStatementDefinitionResolver>();
         var statementRepository = scope.ServiceProvider.GetRequiredService<IStatementRepository>();
         var processingRepository = scope.ServiceProvider
             .GetRequiredService<IStatementProcessingRepository>();
@@ -111,9 +140,32 @@ public sealed class LocalQueueService : ILocalQueueService
         
         if (request.StatementType != StatementType.CreditCard)
         {
-            return NotConfigured(
+            var response = NotConfigured(
                 "STATEMENT_TYPE_NOT_CONFIGURED",
                 $"{request.StatementType} PDF imports are not configured yet.");
+            await processingRepository.FailAsync(
+                auditId,
+                new InvalidOperationException(response.ErrorMessage),
+                cancellationToken: cancellationToken);
+            return response;
+        }
+
+        var definition = definitionResolver.Resolve(new StatementDefinitionSelector(
+            request.StatementDefinitionKey,
+            request.SourceName,
+            request.StatementType.ToStatementKind()));
+
+        if (definition is null)
+        {
+            var response = NotConfigured(
+                "STATEMENT_DEFINITION_NOT_CONFIGURED",
+                $"No statement definition is configured for source '{request.SourceName}' " +
+                $"and statement type '{request.StatementType}'.");
+            await processingRepository.FailAsync(
+                auditId,
+                new InvalidOperationException(response.ErrorMessage),
+                cancellationToken: cancellationToken);
+            return response;
         }
         
         var redactionValues = await redactionValueRepository.GetActiveValuesAsync(
@@ -147,7 +199,6 @@ public sealed class LocalQueueService : ILocalQueueService
 
         var sanitizePiiResponse = await SanitizePdfAsync(
             request,
-            redactionValues,
             replacements,
             cancellationToken);
 
@@ -160,9 +211,15 @@ public sealed class LocalQueueService : ILocalQueueService
             request,
             sanitizePiiResponse,
             config,
-            statementReader);
+            statementReader,
+            definition);
         if (statementResponse.Status != ResponseStatus.Success)
         {
+            await processingRepository.FailAsync(
+                auditId,
+                new InvalidOperationException(
+                    statementResponse.ErrorMessage ?? "Statement extraction failed."),
+                cancellationToken: cancellationToken);
             return Failed(statementResponse);
         }
         
@@ -190,7 +247,8 @@ public sealed class LocalQueueService : ILocalQueueService
         ImportRequest request,
         SanitizePiiResponse sanitizePiiResponse,
         IAppConfiguration config,
-        IOpenAiPdfStatementReader statementReader)
+        IOpenAiPdfStatementReader statementReader,
+        IStatementDefinition definition)
     {
         try
         {
@@ -198,10 +256,12 @@ public sealed class LocalQueueService : ILocalQueueService
             using var tokenSource = new CancellationTokenSource(
                 TimeSpan.FromSeconds(config.AiRequestTimeoutSeconds));
             var extractedStatement = await statementReader.ExtractAsync(
-                new SynchronyAmazonStatementRequest
+                new PdfStatementDocument
                 {
-                    PdfData = sanitizePiiResponse.RasterizedPdfData
+                    RasterizedPdfData = sanitizePiiResponse.RasterizedPdfData,
+                    SanitizedPageText = sanitizePiiResponse.SanitizedPageText
                 },
+                definition,
                 tokenSource.Token);
             return extractedStatement;
         }
@@ -232,14 +292,12 @@ public sealed class LocalQueueService : ILocalQueueService
     // They are not invoked until extraction and validation are connected.
     private Task<SanitizePiiResponse> SanitizePdfAsync(
         ImportRequest request,
-        IReadOnlyList<string> redactionValues,
         IReadOnlyList<PdfTextReplacement> replacements,
         CancellationToken cancellationToken) =>
         _piiSanitizer.SanitizePiiAsync(new SanitizePiiRequest
         {
             UserId = request.UserId,
             PdfData = request.FileData,
-            PiiValues = [.. redactionValues],
             Replacements = [.. replacements]
         }, cancellationToken);
 
@@ -287,7 +345,7 @@ public sealed class LocalQueueService : ILocalQueueService
         ErrorCode = errorCode,
         ErrorMessage = errorMessage
     };
-    
+
     private static ImportResponse Failed(ExtractPdfStatementResponse response) => new()
     {
         Status = ResponseStatus.Failed,

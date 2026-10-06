@@ -21,7 +21,7 @@ public sealed class SummarizeTransactionsResult : ResponseBase
     public required IReadOnlyList<TransactionSummaryGroup> Groups { get; init; }
 }
 
-public sealed class TransactionSummaryGroup : ResponseBase
+public sealed class TransactionSummaryGroup
 {
     public required string Key { get; init; }
     public required int TransactionCount { get; init; }

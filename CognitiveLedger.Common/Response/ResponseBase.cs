@@ -2,7 +2,7 @@ namespace CognitiveLedger.Common.Response;
 
 public abstract class ResponseBase
 {
-    public ResponseStatus Status { get; set; }
+    public required ResponseStatus Status { get; set; }
 
     public string? ErrorCode { get; init; }
 

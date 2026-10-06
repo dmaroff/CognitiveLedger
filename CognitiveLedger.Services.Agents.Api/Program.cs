@@ -4,6 +4,7 @@ using System.Text.Json;
 using Anthropic;
 using CognitiveLedger.Agents;
 using CognitiveLedger.Common;
+using CognitiveLedger.Privacy;
 using CognitiveLedger.Services.Agents.Api.Configuration;
 using CognitiveLedger.Services.Agents.Api.Endpoints;
 using CognitiveLedger.Services.Agents.Api.Mcp;
@@ -94,6 +95,7 @@ public static class Program
             .ValidateOnStart();
 
         builder.Services.AddScoped<IAgentToolExecutionRecorder, AgentToolExecutionRecorder>();
+        builder.Services.AddScoped<ITokenMap, TokenMap>();
         builder.Services.AddHttpClient("Ollama", (serviceProvider, httpClient) =>
         {
             var modelOptions = serviceProvider
@@ -145,6 +147,7 @@ public static class Program
     {
         var agentOptions = serviceProvider.GetRequiredService<IOptions<AgentApiOptions>>().Value;
         var executionRecorder = serviceProvider.GetRequiredService<IAgentToolExecutionRecorder>();
+        var tokenMap = serviceProvider.GetRequiredService<ITokenMap>();
         var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
         var logger = serviceProvider.GetRequiredService<AppLog<ChatClientBuilder>>();
         var providerClient = CreateProviderClient(serviceProvider);
@@ -159,6 +162,7 @@ public static class Program
                     InvokeFunctionAsync(
                         context,
                         executionRecorder,
+                        tokenMap,
                         logger,
                         cancellationToken);
             })
@@ -257,9 +261,11 @@ public static class Program
     private static async ValueTask<object?> InvokeFunctionAsync(
         FunctionInvocationContext context,
         IAgentToolExecutionRecorder executionRecorder,
+        ITokenMap tokenMap,
         AppLog<ChatClientBuilder> logger,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(tokenMap);
         logger.LogMethodStart();
         var startedAtUtc = DateTimeOffset.UtcNow;
         var stopwatch = Stopwatch.StartNew();

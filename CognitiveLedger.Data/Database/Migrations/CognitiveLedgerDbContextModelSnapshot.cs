@@ -106,8 +106,8 @@ namespace CognitiveLedger.Data.Database.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc");
 
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("text")
+                    b.Property<int>("CreatedBy")
+                        .HasColumnType("integer")
                         .HasColumnName("created_by");
 
                     b.Property<decimal>("Fees")
@@ -165,8 +165,8 @@ namespace CognitiveLedger.Data.Database.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at_utc");
 
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("text")
+                    b.Property<int?>("UpdatedBy")
+                        .HasColumnType("integer")
                         .HasColumnName("updated_by");
 
                     b.Property<long>("UserId")
@@ -209,8 +209,8 @@ namespace CognitiveLedger.Data.Database.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc");
 
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("text")
+                    b.Property<int>("CreatedBy")
+                        .HasColumnType("integer")
                         .HasColumnName("created_by");
 
                     b.Property<string>("Description")
@@ -245,8 +245,8 @@ namespace CognitiveLedger.Data.Database.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at_utc");
 
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("text")
+                    b.Property<int?>("UpdatedBy")
+                        .HasColumnType("integer")
                         .HasColumnName("updated_by");
 
                     b.HasKey("Id");
@@ -286,8 +286,8 @@ namespace CognitiveLedger.Data.Database.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc");
 
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("text")
+                    b.Property<int>("CreatedBy")
+                        .HasColumnType("integer")
                         .HasColumnName("created_by");
 
                     b.Property<long?>("DurationMilliseconds")
@@ -336,8 +336,8 @@ namespace CognitiveLedger.Data.Database.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at_utc");
 
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("text")
+                    b.Property<int?>("UpdatedBy")
+                        .HasColumnType("integer")
                         .HasColumnName("updated_by");
 
                     b.Property<long>("UserId")
@@ -505,8 +505,8 @@ namespace CognitiveLedger.Data.Database.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc");
 
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("text")
+                    b.Property<int>("CreatedBy")
+                        .HasColumnType("integer")
                         .HasColumnName("created_by");
 
                     b.Property<DateOnly?>("DateOfBirth")
@@ -543,8 +543,8 @@ namespace CognitiveLedger.Data.Database.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at_utc");
 
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("text")
+                    b.Property<int?>("UpdatedBy")
+                        .HasColumnType("integer")
                         .HasColumnName("updated_by");
 
                     b.HasKey("Id");
@@ -559,7 +559,7 @@ namespace CognitiveLedger.Data.Database.Migrations
                         {
                             Id = 1L,
                             CreatedAtUtc = new DateTime(2026, 9, 22, 0, 0, 0, 0, DateTimeKind.Utc),
-                            CreatedBy = "system",
+                            CreatedBy = 1,
                             EmailAddress = "system@cognitiveledger.invalid",
                             FirstName = "system",
                             IsActive = true,
@@ -581,8 +581,8 @@ namespace CognitiveLedger.Data.Database.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc");
 
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("text")
+                    b.Property<int>("CreatedBy")
+                        .HasColumnType("integer")
                         .HasColumnName("created_by");
 
                     b.Property<bool>("IsActive")
@@ -597,8 +597,8 @@ namespace CognitiveLedger.Data.Database.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at_utc");
 
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("text")
+                    b.Property<int?>("UpdatedBy")
+                        .HasColumnType("integer")
                         .HasColumnName("updated_by");
 
                     b.Property<long>("UserId")

@@ -1,13 +1,23 @@
-namespace CognitiveLedger.AI.OpenAI.StatementDefinitions;
+using CognitiveLedger.Statements.Abstractions;
 
-public static class SynchronyAmazonStatementDefinition
+namespace CognitiveLedger.Statements.Definitions.SynchronyAmazon;
+
+public sealed class SynchronyAmazonStatementDefinition : IStatementDefinition
 {
     private const string PrivacyTokenInstruction =
         " Values beginning with 'CL_' and ending with a numeric identifier are privacy " +
         "tokens. Copy these values exactly into the matching response field. Do not alter, " +
         "expand, interpret, or omit them.";
 
-    public const string SummaryPrompt =
+    public StatementDefinitionDescriptor Descriptor { get; } = new(
+        StatementDefinitionKeys.SynchronyAmazonStoreCard,
+        "Synchrony Bank",
+        "Amazon Store Card",
+        StatementKind.CreditCard,
+        ["Synchrony", "Amazon", "Amazon Store Card", "Synchrony Amazon"],
+        ["Amazon Store Card", "amazon.syf.com"]);
+
+    public string SummaryPrompt { get; } =
         "Read only the statement-level summary from this Synchrony Amazon credit-card " +
         "statement. Copy the issuer, account name, complete statement period, previous " +
         "balance, new balance, and the printed totals for payments, other credits, " +
@@ -22,7 +32,7 @@ public static class SynchronyAmazonStatementDefinition
         "YYYY-MM-DD dates. Do not infer dates or calculate summary values from transaction rows." +
         PrivacyTokenInstruction;
 
-    public const string TransactionPrompt =
+    public string TransactionPrompt { get; } =
         "Extract every credit-card transaction row visible on this single Synchrony Amazon " +
         "statement page. Never summarize, sample, combine, or omit rows. Include purchases, " +
         "payments, refunds, returns, statement credits, fees, and interest when they appear " +
@@ -45,7 +55,7 @@ public static class SynchronyAmazonStatementDefinition
         "amount digit by digit, especially small statement credits." +
         PrivacyTokenInstruction;
 
-    public static object SummarySchema { get; } = new
+    public object SummarySchema { get; } = new
     {
         type = "object",
         additionalProperties = false,
@@ -68,18 +78,18 @@ public static class SynchronyAmazonStatementDefinition
                     fees = new { type = "number" },
                     interest_charged = new { type = "number" }
                 },
-                required = new[]
-                {
+                required = (string[])
+                [
                     "issuer", "account_name", "statement_period_start", "statement_period_end",
                     "previous_balance", "new_balance",
                     "total_payments", "total_other_credits", "fees", "interest_charged"
-                }
+                ]
             }
         },
-        required = new[] { "statement_summary" }
+        required = (string[])["statement_summary"]
     };
 
-    public static object TransactionSchema { get; } = new
+    public object TransactionSchema { get; } = new
     {
         type = "object",
         additionalProperties = false,
@@ -94,20 +104,20 @@ public static class SynchronyAmazonStatementDefinition
                     additionalProperties = false,
                     properties = new
                     {
-                        date = new { type = new[] { "string", "null" } },
+                        date = new { type = (string[])["string", "null"] },
                         category = new { type = "string" },
                         merchant = new { type = "string" },
                         description = new { type = "string" },
                         amount = new { type = "number" },
                         is_credit = new { type = "boolean" }
                     },
-                    required = new[]
-                    {
+                    required = (string[])
+                    [
                         "date", "category", "merchant", "description", "amount", "is_credit"
-                    }
+                    ]
                 }
             }
         },
-        required = new[] { "transactions" }
+        required = (string[])["transactions"]
     };
 }

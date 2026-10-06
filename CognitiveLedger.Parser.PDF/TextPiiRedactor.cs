@@ -21,10 +21,14 @@ namespace CognitiveLedger.Parser.PDF;
 public sealed class TextPdfRedactor : IPdfRedactor
 {
     private readonly IAppLog<TextPdfRedactor> _logger;
+    private readonly IPdfRasterizer? _pdfRasterizer;
 
-    public TextPdfRedactor(IAppLog<TextPdfRedactor> logger)
+    public TextPdfRedactor(
+        IAppLog<TextPdfRedactor> logger,
+        IPdfRasterizer? pdfRasterizer = null)
     {
         _logger = logger;
+        _pdfRasterizer = pdfRasterizer;
     }
 
     public RedactPdfResponse RedactPdf(RedactPdfRequest request)
@@ -49,24 +53,30 @@ public sealed class TextPdfRedactor : IPdfRedactor
             strategy.Add(new RegexBasedCleanupStrategy($"(?i:{escapedValue})"));
         }
 
-        using var inputStream = new MemoryStream(request.PdfData, writable: false);
-        using var outputStream = new MemoryStream();
+        var tokenPlacements = FindTokenPlacements(
+            request.PdfData,
+            request.Replacements);
 
-        using (var pdfDocument = new PdfDocument(
-                   new PdfReader(inputStream),
-                   new PdfWriter(outputStream)))
+        byte[] redactedPdfData;
+        try
         {
-            var tokenPlacements = FindTokenPlacements(
-                pdfDocument,
-                request.Replacements);
-
-            PdfCleaner.AutoSweepCleanUp(pdfDocument, strategy);
-            DrawTokens(pdfDocument, tokenPlacements);
+            redactedPdfData = CleanPdf(
+                request.PdfData,
+                strategy,
+                tokenPlacements);
+        }
+        catch (NullReferenceException exception) when (_pdfRasterizer is not null)
+        {
+            _logger.LogWarning(
+                $"PDF cleanup failed for a tagged document; using the rasterized redaction fallback. {exception.Message}");
+            redactedPdfData = RedactRasterizedPdf(
+                request.PdfData,
+                tokenPlacements);
         }
 
         var response = new RedactPdfResponse
         {
-            PdfData = outputStream.ToArray()
+            PdfData = redactedPdfData
         };
 
         _logger.LogInfo(request,
@@ -78,11 +88,53 @@ public sealed class TextPdfRedactor : IPdfRedactor
         return response;
     }
 
+    private static byte[] CleanPdf(
+        byte[] pdfData,
+        CompositeCleanupStrategy strategy,
+        IReadOnlyList<TokenPlacement> tokenPlacements)
+    {
+        using var inputStream = new MemoryStream(pdfData, writable: false);
+        using var outputStream = new MemoryStream();
+
+        using (var pdfDocument = new PdfDocument(
+                   new PdfReader(inputStream),
+                   new PdfWriter(outputStream)))
+        {
+            PdfCleaner.AutoSweepCleanUp(pdfDocument, strategy);
+            DrawTokens(pdfDocument, tokenPlacements);
+        }
+
+        return outputStream.ToArray();
+    }
+
+    private byte[] RedactRasterizedPdf(
+        byte[] pdfData,
+        IReadOnlyList<TokenPlacement> tokenPlacements)
+    {
+        var rasterized = _pdfRasterizer!.RasterizePdf(
+            new RasterizePdfRequest { PdfData = pdfData });
+        using var inputStream = new MemoryStream(
+            rasterized.PdfData,
+            writable: false);
+        using var outputStream = new MemoryStream();
+
+        using (var pdfDocument = new PdfDocument(
+                   new PdfReader(inputStream),
+                   new PdfWriter(outputStream)))
+        {
+            DrawTokens(pdfDocument, tokenPlacements);
+        }
+
+        return outputStream.ToArray();
+    }
+
     private static IReadOnlyList<TokenPlacement> FindTokenPlacements(
-        PdfDocument pdfDocument,
+        byte[] pdfData,
         IReadOnlyCollection<PdfTextReplacement> replacements)
     {
         var placements = new List<TokenPlacement>();
+        using var inputStream = new MemoryStream(pdfData, writable: false);
+        using var pdfDocument = new PdfDocument(new PdfReader(inputStream));
 
         foreach (var replacement in replacements)
         {

@@ -19,14 +19,14 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
     private readonly IPiiDetector _piiDetector;
     private readonly IPdfRedactor _pdfRedactor;
     private readonly IPdfRasterizer _pdfRasterizer;
-    private readonly AppLog<PdfPiiSanitizer> _logger;
+    private readonly IAppLog<PdfPiiSanitizer> _logger;
 
     public PdfPiiSanitizer(
         IPdfTextExtractor pdfTextExtractor,
         IPiiDetector piiDetector,
         IPdfRedactor pdfRedactor,
         IPdfRasterizer pdfRasterizer,
-        AppLog<PdfPiiSanitizer> logger)
+        IAppLog<PdfPiiSanitizer> logger)
     {
         _pdfTextExtractor = pdfTextExtractor
             ?? throw new ArgumentNullException(nameof(pdfTextExtractor));
@@ -66,13 +66,15 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
             PdfText = extractedText
         };
 
-        var piiValues = GetPiiValues(request);
-
-        var piiDetectionItems = piiValues.Count > 0
+        var piiDetectionItems = request.Replacements.Count > 0
             ? _piiDetector.DetectPii2(new DetectPii2Request
             {
                 FullText = extractedText.FullText,
-                PiiValues = piiValues
+                PiiValues =
+                [
+                    .. request.Replacements
+                        .Select(replacement => replacement.OriginalValue)
+                ]
             }).PiiItems
             : _piiDetector.DetectPii(detectRequest).PiiItems;
 
@@ -80,6 +82,9 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
         {
             PiiItems = piiDetectionItems
         };
+        var sanitizedPageText = SanitizePageText(
+            extractedText.Pages,
+            request.Replacements);
 
         _logger.LogInfo(request, $"PII detection completed with {piiDetection.PiiItems.Count} items");
 
@@ -87,6 +92,7 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
         {
             return Task.FromResult(CreateRasterizedResponse(
                 request.PdfData,
+                sanitizedPageText,
                 PiiDetectionStatus.NotDetected,
                 []));
         }
@@ -124,12 +130,14 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
         
         return Task.FromResult(CreateRasterizedResponse(
             redactionResponse.PdfData,
+            sanitizedPageText,
             PiiDetectionStatus.DetectedAndRemoved,
             piiDetection.PiiItems));
     }
 
     private SanitizePiiResponse CreateRasterizedResponse(
         byte[] verifiedPdfData,
+        IReadOnlyList<PdfPageText> sanitizedPageText,
         PiiDetectionStatus piiStatus,
         IReadOnlyList<PiiItem> piiItems)
     {
@@ -147,12 +155,41 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
         return new SanitizePiiResponse
         {
             RasterizedPdfData = rasterized.PdfData,
+            SanitizedPageText = sanitizedPageText,
             PageCount = rasterized.PageCount,
             RasterizationDpi = rasterized.Dpi,
             Sha256Hash = Convert.ToHexString(SHA256.HashData(rasterized.PdfData)),
             PiiStatus = piiStatus,
             PiiItems = piiItems
         };
+    }
+
+    private static IReadOnlyList<PdfPageText> SanitizePageText(
+        IReadOnlyList<PdfPageText> pages,
+        IEnumerable<PdfTextReplacement> replacements)
+    {
+        PdfTextReplacement[] orderedReplacements =
+        [
+            .. replacements
+                .Where(replacement =>
+                    !string.IsNullOrWhiteSpace(replacement.OriginalValue) &&
+                    !string.IsNullOrWhiteSpace(replacement.ReplacementValue))
+                .OrderByDescending(replacement => replacement.OriginalValue.Length)
+        ];
+
+        return
+        [
+            .. pages.Select(page => new PdfPageText
+            {
+                PageNumber = page.PageNumber,
+                Text = orderedReplacements.Aggregate(
+                    page.Text,
+                    (text, replacement) => text.Replace(
+                        replacement.OriginalValue,
+                        replacement.ReplacementValue,
+                        StringComparison.OrdinalIgnoreCase))
+            })
+        ];
     }
 
     private static void ValidateRequest(SanitizePiiRequest request)
@@ -172,20 +209,6 @@ public sealed class PdfPiiSanitizer : IPiiSanitizer
                 "PDF data cannot be empty.",
                 nameof(request));
         }
-    }
-
-    private static IList<string> GetPiiValues(
-        SanitizePiiRequest request)
-    {
-        if (request.Replacements.Count > 0)
-        {
-            return
-            [
-                .. request.Replacements
-                    .Select(replacement => replacement.OriginalValue)
-            ];
-        }
-        return [.. request.PiiValues];
     }
 
     private static void ValidateRedactionResponse(

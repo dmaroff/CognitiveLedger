@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CognitiveLedger.Common\CognitiveLedger.Common.csproj" />
+    <ProjectReference Include="..\CognitiveLedger.Privacy\CognitiveLedger.Privacy.csproj" />
   </ItemGroup>
 
 </Project>

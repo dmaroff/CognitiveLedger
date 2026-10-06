@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using CognitiveLedger.Common;
+using CognitiveLedger.Common.Response;
 using CognitiveLedger.Data.Database;
 using CognitiveLedger.Data.Models.CreditCard;
 using Microsoft.EntityFrameworkCore;
@@ -62,6 +63,7 @@ public sealed class TransactionSummaryQuery : ITransactionSummaryQuery
 
         var result = new SummarizeTransactionsResult
         {
+            Status = ResponseStatus.Success,
             TransactionCount = totals?.TransactionCount ?? 0,
             ChargeCount = totals?.ChargeCount ?? 0,
             CreditCount = totals?.CreditCount ?? 0,

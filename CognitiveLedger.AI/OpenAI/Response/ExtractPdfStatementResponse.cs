@@ -6,7 +6,7 @@ namespace CognitiveLedger.AI.OpenAI.Response;
 public sealed class ExtractPdfStatementResponse : ResponseBase
 {
     [JsonPropertyName("statement")]
-    public required ExtractedStatement? Statement { get; init; }
+    public required ExtractedStatement Statement { get; init; }
 }
 
 public sealed class ExtractedStatement

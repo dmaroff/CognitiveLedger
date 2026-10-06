@@ -5,6 +5,8 @@ namespace CognitiveLedger.Importer;
 
 internal static class Program
 {
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true
@@ -47,7 +49,8 @@ internal static class Program
 
             await ImportPdfAsync(
                 httpClient,
-                pdfFiles[selectedNumber - 1]);
+                pdfFiles[selectedNumber - 1],
+                settings.Importer.UserId);
             Console.WriteLine();
         }
     }
@@ -64,12 +67,12 @@ internal static class Program
             return Path.GetFullPath(configuredFolder);
         }
 
-        var candidates = new[]
-        {
+        string[] candidates =
+        [
             Path.Combine(Directory.GetCurrentDirectory(), configuredFolder),
             Path.Combine(Directory.GetCurrentDirectory(), "..", configuredFolder),
             Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", configuredFolder)
-        };
+        ];
 
         return Path.GetFullPath(candidates.FirstOrDefault(Directory.Exists) ?? candidates[0]);
     }
@@ -109,6 +112,12 @@ internal static class Program
         {
             throw new InvalidOperationException(
                 "Importer:TimeoutSeconds must be a positive integer in appsettings.json.");
+        }
+
+        if (appSettings.Importer.UserId <= 0)
+        {
+            throw new InvalidOperationException(
+                "Importer:UserId must be a positive integer in appsettings.json.");
         }
 
         if (string.IsNullOrWhiteSpace(appSettings.PdfFolder))
@@ -155,14 +164,15 @@ internal static class Program
 
     private static async Task ImportPdfAsync(
         HttpClient httpClient,
-        string pdfPath)
+        string pdfPath,
+        int userId)
     {
         try
         {
             Console.WriteLine($"\nImporting {Path.GetFileName(pdfPath)}...");
 
             var request = new ImportPdfRequest(
-                UserId: 1,
+                UserId: userId,
                 Base64PdfData: Convert.ToBase64String(await File.ReadAllBytesAsync(pdfPath)),
                 FileName: Path.GetFileName(pdfPath),
                 BankName: "Unknown",
@@ -171,8 +181,32 @@ internal static class Program
             using var response = await httpClient.PostAsJsonAsync("api/parse/pdf", request, JsonOptions);
             var responseBody = await response.Content.ReadAsStringAsync();
 
-            Console.WriteLine($"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
-            Console.WriteLine(FormatJson(responseBody));
+            if (!response.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
+                Console.WriteLine(FormatJson(responseBody));
+                return;
+            }
+
+            var import = JsonSerializer.Deserialize<ImportPdfResponse>(responseBody, JsonOptions)
+                ?? throw new JsonException("The importer returned an empty response.");
+
+            if (import.Existing && import.StatementId is not null)
+            {
+                Console.WriteLine($"Already imported as statement {import.StatementId}.");
+                return;
+            }
+
+            if (import.ProcessingAuditId is null)
+            {
+                Console.WriteLine("The importer did not return a processing audit ID.");
+                return;
+            }
+
+            await PollImportAsync(
+                httpClient,
+                import.ProcessingAuditId.Value,
+                userId);
         }
         catch (HttpRequestException exception)
         {
@@ -189,6 +223,53 @@ internal static class Program
         catch (UnauthorizedAccessException exception)
         {
             Console.WriteLine($"Unable to read the PDF: {exception.Message}");
+        }
+        catch (JsonException exception)
+        {
+            Console.WriteLine($"The importer returned an invalid response: {exception.Message}");
+        }
+    }
+
+    private static async Task PollImportAsync(
+        HttpClient httpClient,
+        long processingAuditId,
+        int userId)
+    {
+        Console.WriteLine($"Queued as import {processingAuditId}. Waiting for completion...");
+
+        while (true)
+        {
+            await Task.Delay(PollInterval);
+
+            using var response = await httpClient.GetAsync(
+                $"api/parse/status/{processingAuditId}?userId={userId}");
+            var responseBody = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"Status check failed: HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
+                Console.WriteLine(FormatJson(responseBody));
+                return;
+            }
+
+            var status = JsonSerializer.Deserialize<ImportStatusResponse>(responseBody, JsonOptions)
+                ?? throw new JsonException("The importer returned an empty status response.");
+
+            if (string.Equals(status.Status, "Processing", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (string.Equals(status.Status, "Succeeded", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine(
+                    $"Import complete. Statement {status.StatementId}; " +
+                    $"{status.ExtractedTransactionCount ?? 0} transactions extracted.");
+                return;
+            }
+
+            Console.WriteLine($"Import failed: {status.ErrorMessage ?? "Unknown error."}");
+            return;
         }
     }
 
@@ -217,6 +298,17 @@ internal static class Program
         string BankName,
         string StatementType);
 
+    private sealed record ImportPdfResponse(
+        bool Existing,
+        long? ProcessingAuditId,
+        long? StatementId);
+
+    private sealed record ImportStatusResponse(
+        string Status,
+        long? StatementId,
+        int? ExtractedTransactionCount,
+        string? ErrorMessage);
+
     private sealed record AppSettings(
         ImporterSettings Importer,
         string PdfFolder);
@@ -225,5 +317,8 @@ internal static class Program
         ImporterSettings? Importer,
         string? PdfFolder);
 
-    private sealed record ImporterSettings(string Url, int TimeoutSeconds);
+    private sealed record ImporterSettings(
+        string Url,
+        int TimeoutSeconds,
+        int UserId);
 }

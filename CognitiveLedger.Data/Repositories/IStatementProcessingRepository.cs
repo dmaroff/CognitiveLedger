@@ -7,6 +7,11 @@ namespace CognitiveLedger.Data.Repositories;
 
 public interface IStatementProcessingRepository
 {
+    Task<StatementProcessingAudit?> FindAsync(
+        long processingAuditId,
+        long userId,
+        CancellationToken cancellationToken = default);
+
     Task<StatementProcessingAudit> StartAsync(
         StatementProcessingAudit audit,
         CancellationToken cancellationToken = default);

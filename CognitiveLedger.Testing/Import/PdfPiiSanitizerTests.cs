@@ -18,7 +18,14 @@ public class PdfPiiSanitizerTests
 
         var response = await sanitizer.SanitizePiiAsync(CreateRequest());
 
-        Assert.That(response.RasterizedPdfData, Is.Not.Empty);
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(response.RasterizedPdfData, Is.Not.Empty);
+            Assert.That(response.SanitizedPageText, Has.Count.EqualTo(1));
+            Assert.That(response.SanitizedPageText[0].PageNumber, Is.EqualTo(1));
+            Assert.That(response.SanitizedPageText[0].Text, Does.Contain("CL_PERSON_0001"));
+            Assert.That(response.SanitizedPageText[0].Text, Does.Not.Contain("Dan Maroff"));
+        }
     }
 
     [Test]
@@ -50,7 +57,7 @@ public class PdfPiiSanitizerTests
         return new SanitizePiiRequest
         {
             UserId = 1,
-            PdfData = new byte[] { 1 },
+            PdfData = [1],
             Replacements =
             [
                 new PdfTextReplacement
@@ -76,6 +83,14 @@ public class PdfPiiSanitizerTests
         {
             return new ExtractPdfTextResponse
             {
+                Pages =
+                [
+                    new PdfPageText
+                    {
+                        PageNumber = 1,
+                        Text = _responses.Peek()
+                    }
+                ],
                 FullText = _responses.Dequeue(),
                 TextItems = []
             };
@@ -99,7 +114,7 @@ public class PdfPiiSanitizerTests
         {
             return new RedactPdfResponse
             {
-                PdfData = new byte[] { 2 }
+                PdfData = [2]
             };
         }
     }
@@ -110,7 +125,7 @@ public class PdfPiiSanitizerTests
         {
             return new RasterizePdfResponse
             {
-                PdfData = new byte[] { 3 },
+                PdfData = [3],
                 PageCount = 1,
                 Dpi = 200
             };

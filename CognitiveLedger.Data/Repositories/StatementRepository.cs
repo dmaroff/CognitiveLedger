@@ -64,7 +64,9 @@ public sealed class StatementRepository(CognitiveLedgerDbContext dbContext)
 
         var transactions = statement.Transactions.ToList();
         var createdAtUtc = DateTime.UtcNow;
+        var createdBy = checked((int)statement.UserId);
         statement.CreatedAtUtc = createdAtUtc;
+        statement.CreatedBy = createdBy;
 
         foreach (var item in transactions.Select((transaction, index) =>
                      new { Transaction = transaction, Sequence = index + 1 }))
@@ -79,13 +81,16 @@ public sealed class StatementRepository(CognitiveLedgerDbContext dbContext)
             item.Transaction.Statement = statement;
             item.Transaction.Sequence = item.Sequence;
             item.Transaction.CreatedAtUtc = createdAtUtc;
+            item.Transaction.CreatedBy = createdBy;
         }
 
-        var duplicateSequences = transactions
-            .GroupBy(transaction => transaction.Sequence)
-            .Where(group => group.Count() > 1)
-            .Select(group => group.Key)
-            .ToArray();
+        int[] duplicateSequences =
+        [
+            .. transactions
+                .GroupBy(transaction => transaction.Sequence)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+        ];
 
         if (duplicateSequences.Length > 0)
         {

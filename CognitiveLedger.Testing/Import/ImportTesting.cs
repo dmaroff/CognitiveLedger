@@ -13,6 +13,8 @@ using CognitiveLedger.Parser.PDF.Interfaces;
 using CognitiveLedger.Parser.PDF.Request;
 using CognitiveLedger.Parser.PDF.Response;
 using CognitiveLedger.Parser.PDF.Types;
+using CognitiveLedger.Privacy;
+using CognitiveLedger.Statements.Definitions.SynchronyAmazon;
 using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -20,29 +22,190 @@ using DataProcessingAudit = CognitiveLedger.Data.Models.CreditCard.StatementProc
 using DataStatement = CognitiveLedger.Data.Models.CreditCard.CreditCardStatement;
 using DataTransaction = CognitiveLedger.Data.Models.CreditCard.CreditCardTransaction;
 
-namespace CognitiveLedger.Testing;
+namespace CognitiveLedger.Testing.Import;
 
 public class Tests
 {
     private const long TestUserId = UserCatalog.SystemUserId;
 
     [Test]
+    [Explicit("Generates a tokenized PDF preview for manual inspection.")]
+    public async Task PreviewTokenizedPdf()
+    {
+        var pdfPath = FindRepositoryFile("Test", "Synchrony-Amazon.pdf");
+        
+        var testFolder = Path.GetDirectoryName(pdfPath)
+                         ?? throw new DirectoryNotFoundException(
+                             $"Could not find test folder for '{pdfPath}'.");
+        
+        var originalPdf = await File.ReadAllBytesAsync(pdfPath);
+        var tokenMap = new TokenMap();
+
+        PdfTextReplacement[] replacements =
+        [
+            new PdfTextReplacement
+            {
+                OriginalValue = "3016",
+                ReplacementValue = tokenMap.Tokenize("3016", TokenType.Account)
+            },
+            new PdfTextReplacement
+            {
+                OriginalValue = "Daniel",
+                ReplacementValue = tokenMap.Tokenize("Daniel", TokenType.Person)
+            },
+            new PdfTextReplacement
+            {
+                OriginalValue = "Maroff",
+                ReplacementValue = tokenMap.Tokenize("Maroff", TokenType.Person)
+            },
+            new PdfTextReplacement
+            {
+                OriginalValue = "15824 REYNOLDS",
+                ReplacementValue = tokenMap.Tokenize("15824 REYNOLDS", TokenType.Value)
+            },
+            new PdfTextReplacement
+            {
+                OriginalValue = "Indian Land",
+                ReplacementValue = tokenMap.Tokenize("Indian Land", TokenType.Value)
+            }
+        ];
+
+        var sanitizer = new PdfPiiSanitizer(
+            new PdfPigTextExtractor(new NoOpAppLog<PdfPigTextExtractor>()),
+            new StubPiiDetector(),
+            new TextPdfRedactor(new NoOpAppLog<TextPdfRedactor>()),
+            new PdfRasterizer(new NoOpAppLog<PdfRasterizer>()),
+            new NoOpAppLog<PdfPiiSanitizer>());
+
+        var result = await sanitizer.SanitizePiiAsync(
+            new SanitizePiiRequest
+            {
+                UserId = 1,
+                PdfData = originalPdf,
+                Replacements = replacements
+            });
+
+        var outputDirectory = Path.Combine(testFolder, "Output");
+        Directory.CreateDirectory(outputDirectory);
+
+        var outputPath = Path.Combine(
+            outputDirectory,
+            "Synchrony-Amazon-Tokenized-Preview.pdf");
+
+        await File.WriteAllBytesAsync(outputPath, result.RasterizedPdfData);
+
+        TestContext.Progress.WriteLine(
+            $"Tokenized PDF preview written to: {outputPath}");
+
+        Assert.That(File.Exists(outputPath), Is.True);
+        Assert.That(new FileInfo(outputPath).Length, Is.GreaterThan(0));
+    }
+
+    [Test]
+    [Explicit("Writes the Discover PDF and sanitized page text supplied to the AI.")]
+    public async Task PreviewDiscoverAiInput()
+    {
+        const int previewUserId = 2;
+        var sourcePath = FindRepositoryFile("Test", "Discover-Capital-One.pdf");
+        var sourcePdf = await File.ReadAllBytesAsync(sourcePath);
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json")
+            .AddJsonFile("appsettings.Development.json", optional: true)
+            .Build();
+        var config = new AppConfiguration(configuration);
+        var dbOptions = new DbContextOptionsBuilder<CognitiveLedgerDbContext>()
+            .UseNpgsql(config.ConnectionString)
+            .Options;
+
+        await using var dbContext = new CognitiveLedgerDbContext(dbOptions);
+        var redactionValues = await new UserRedactionValueRepository(dbContext)
+            .GetActiveValuesAsync(previewUserId);
+        Assert.That(redactionValues, Is.Not.Empty);
+
+        var tokenMap = new TokenMap();
+        PdfTextReplacement[] replacements =
+        [
+            .. redactionValues.Select(value => new PdfTextReplacement
+            {
+                OriginalValue = value,
+                ReplacementValue = tokenMap.Tokenize(value, TokenType.Value)
+            })
+        ];
+        var rasterizer = new PdfRasterizer(new NoOpAppLog<PdfRasterizer>());
+        var sanitizer = new PdfPiiSanitizer(
+            new PdfPigTextExtractor(new NoOpAppLog<PdfPigTextExtractor>()),
+            new StubPiiDetector(),
+            new TextPdfRedactor(
+                new NoOpAppLog<TextPdfRedactor>(),
+                rasterizer),
+            rasterizer,
+            new NoOpAppLog<PdfPiiSanitizer>());
+
+        var result = await sanitizer.SanitizePiiAsync(new SanitizePiiRequest
+        {
+            UserId = previewUserId,
+            PdfData = sourcePdf,
+            Replacements = replacements
+        });
+
+        var outputDirectory = Path.Combine(
+            Path.GetDirectoryName(sourcePath)!,
+            "Output");
+        Directory.CreateDirectory(outputDirectory);
+        var pdfOutputPath = Path.Combine(
+            outputDirectory,
+            "Discover-Capital-One-AI-Input.pdf");
+        var textOutputPath = Path.Combine(
+            outputDirectory,
+            "Discover-Capital-One-AI-Input.txt");
+        var splitPages = PdfPageSplitter.SplitPages(result.RasterizedPdfData);
+        (int Index, PdfPageText Text)[] pagesToSend =
+        [
+            .. result.SanitizedPageText
+                .Select((text, index) => (Index: index, Text: text))
+                .Where(page => !string.IsNullOrWhiteSpace(page.Text.Text))
+        ];
+        var aiPdfData = PdfPageSplitter.CombinePages(
+            [.. pagesToSend.Select(page => splitPages[page.Index])]);
+        PdfPageText[] aiPageText = [.. pagesToSend.Select(page => page.Text)];
+        var sanitizedText = OpenAiPdfStatementReader.FormatSanitizedPageText(
+            aiPageText);
+
+        await File.WriteAllBytesAsync(pdfOutputPath, aiPdfData);
+        await File.WriteAllTextAsync(textOutputPath, sanitizedText);
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(result.SanitizedPageText.Count, Is.EqualTo(result.PageCount));
+            Assert.That(result.PageCount, Is.EqualTo(6));
+            Assert.That(aiPageText, Has.Length.EqualTo(5));
+            Assert.That(PdfPageSplitter.SplitPages(aiPdfData), Has.Count.EqualTo(5));
+            Assert.That(sanitizedText, Does.Contain("APPLE.COM/BILL 866-712-7753 CA $14.99"));
+            Assert.That(redactionValues.All(value =>
+                !sanitizedText.Contains(value, StringComparison.OrdinalIgnoreCase)), Is.True);
+            Assert.That(new FileInfo(pdfOutputPath).Length, Is.GreaterThan(0));
+            Assert.That(new FileInfo(textOutputPath).Length, Is.GreaterThan(0));
+        }
+
+        TestContext.Progress.WriteLine($"AI PDF input written to: {pdfOutputPath}");
+        TestContext.Progress.WriteLine($"AI text input written to: {textOutputPath}");
+    }
+
+    [Test]
     public async Task SanitizePiiAsync_PdfWithDetectedPii_ReturnsImageOnlyPdf()
     {
-        var logger = TestLogging.CreateLogger<Tests>();
-        logger.LogInformation("Starting test: {TestName}", nameof(SanitizePiiAsync_PdfWithDetectedPii_ReturnsImageOnlyPdf));
-        
         var pdfPath = FindRepositoryFile("Test", "Synchrony-Amazon.pdf");
+        
         var testFolder = Path.GetDirectoryName(pdfPath)
                          ?? throw new DirectoryNotFoundException($"Could not find test folder for '{pdfPath}'.");
+        
         var originalPdf = await File.ReadAllBytesAsync(pdfPath);
         var textExtractor = new PdfPigTextExtractor(
             TestLogging.CreateLogger<PdfPigTextExtractor>());
 
         var extractPdfText = textExtractor.ExtractPdfText(
             new ExtractPdfTextRequest { UserId = 1, PdfData = originalPdf });
-        
-        logger.LogInformation("Extracted text from PDF: {TextLength}", extractPdfText.FullText.Length);
         
         var piiDetector = new StubPiiDetector();
         IList<string> piiValues =
@@ -53,20 +216,29 @@ public class Tests
             "15824 REYNOLDS",
             "Indian Land"
         ];
+        var tokenMap = new TokenMap();
+        IList<PdfTextReplacement> replacements =
+        [
+            .. piiValues.Select(value => new PdfTextReplacement
+            {
+                OriginalValue = value,
+                ReplacementValue = tokenMap.Tokenize(value, TokenType.Value)
+            })
+        ];
 
         var sanitizer = new PdfPiiSanitizer(
             textExtractor,
             piiDetector,
-            new TextPdfRedactor(TestLogging.CreateLogger<TextPdfRedactor>()),
-            new PdfRasterizer(TestLogging.CreateLogger<PdfRasterizer>()),
-            TestLogging.CreateLogger<PdfPiiSanitizer>());
+            new TextPdfRedactor(new NoOpAppLog<TextPdfRedactor>()),
+            new PdfRasterizer(new NoOpAppLog<PdfRasterizer>()),
+            new NoOpAppLog<PdfPiiSanitizer>());
 
         var result = await sanitizer.SanitizePiiAsync(
             new SanitizePiiRequest
             {
                 UserId = 1,
                 PdfData = originalPdf,
-                PiiValues = piiValues
+                Replacements = replacements
             });
 
         var rasterizedText = textExtractor.ExtractPdfText(
@@ -76,14 +248,8 @@ public class Tests
         {
             Assert.That(result.PiiStatus, Is.EqualTo(PiiDetectionStatus.DetectedAndRemoved));
             Assert.That(result.PiiItems, Is.Not.Empty);
-            Assert.That(
-                result.PiiItems.Select(item => item.Value),
-                Does.Contain("Daniel").IgnoreCase);
-            Assert.That(
-                result.PiiItems.All(item => piiValues.Contains(
-                    item.Value,
-                    StringComparer.OrdinalIgnoreCase)),
-                Is.True);
+            Assert.That(result.PiiItems.Select(item => item.Value), Does.Contain("Daniel").IgnoreCase);
+            Assert.That(result.PiiItems.All(item => piiValues.Contains(item.Value, StringComparer.OrdinalIgnoreCase)), Is.True);
             Assert.That(result.RasterizedPdfData, Is.Not.Empty);
             Assert.That(result.RasterizedPdfData, Is.Not.EqualTo(originalPdf));
             Assert.That(result.PageCount, Is.GreaterThan(0));
@@ -98,18 +264,49 @@ public class Tests
     [Test]
     public async Task Send_Sanitized_PDF_To_LLM_And_Extract_Statement_Data()
     {
-        var pdfPath = FindRepositoryFile("Test", "Synchrony-Amazon-Rasterized.pdf");
-        var originalPdf = await File.ReadAllBytesAsync(pdfPath);
-        var sourcePdfPath = FindRepositoryFile("Test", "Synchrony-Amazon.pdf");
-        var sourcePdf = await File.ReadAllBytesAsync(sourcePdfPath);
+        var pdfPath = FindRepositoryFile("Test", "Synchrony-Amazon.pdf");
+        var sourcePdf = await File.ReadAllBytesAsync(pdfPath);
         var sourceDocumentSha256 = Convert.ToHexString(SHA256.HashData(sourcePdf));
+        var tokenMap = new TokenMap();
+        string[] piiValues =
+        [
+            "3016",
+            "Daniel",
+            "Maroff",
+            "15824 REYNOLDS",
+            "Indian Land"
+        ];
+        PdfTextReplacement[] replacements =
+        [
+            .. piiValues.Select(value => new PdfTextReplacement
+            {
+                OriginalValue = value,
+                ReplacementValue = tokenMap.Tokenize(value, TokenType.Value)
+            })
+        ];
+        var rasterizer = new PdfRasterizer(new NoOpAppLog<PdfRasterizer>());
+        var sanitized = await new PdfPiiSanitizer(
+            new PdfPigTextExtractor(new NoOpAppLog<PdfPigTextExtractor>()),
+            new StubPiiDetector(),
+            new TextPdfRedactor(
+                new NoOpAppLog<TextPdfRedactor>(),
+                rasterizer),
+            rasterizer,
+            new NoOpAppLog<PdfPiiSanitizer>()).SanitizePiiAsync(
+            new SanitizePiiRequest
+            {
+                UserId = checked((int)TestUserId),
+                PdfData = sourcePdf,
+                Replacements = replacements
+            });
         
         var configuration = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("appsettings.json")
             .AddJsonFile("appsettings.Development.json", optional: true)
             .Build();
-        IAppConfiguration config = new AppConfiguration(configuration);
+        
+        var config = new AppConfiguration(configuration);
         var apiKey = config.AiApiKey;
         Assert.That(apiKey, Is.Not.Null.And.Not.Empty);
 
@@ -130,11 +327,6 @@ public class Tests
 
         if (existingStatement is not null)
         {
-            TestLogging.CreateLogger<Tests>().LogInformation(
-                "Statement PDF has already been imported as statement ID {StatementId}; " +
-                "SHA-256={SourceDocumentSha256}",
-                existingStatement.Id,
-                sourceDocumentSha256);
             Assert.Pass(
                 $"Statement PDF has already been imported as statement ID " +
                 $"{existingStatement.Id}.");
@@ -146,7 +338,7 @@ public class Tests
         var reader = new OpenAiPdfStatementReader(
             httpClient,
             config,
-            TestLogging.CreateLogger<OpenAiPdfStatementReader>());
+            new NoOpAppLog<OpenAiPdfStatementReader>());
 
         var audit = await processingRepository.StartAsync(
             new DataProcessingAudit
@@ -163,10 +355,13 @@ public class Tests
 
         try
         {
-            result = await reader.ExtractAsync(new SynchronyAmazonStatementRequest
-            {
-                PdfData = originalPdf
-            });
+            result = await reader.ExtractAsync(
+                new PdfStatementDocument
+                {
+                    RasterizedPdfData = sanitized.RasterizedPdfData,
+                    SanitizedPageText = sanitized.SanitizedPageText
+                },
+                new SynchronyAmazonStatementDefinition());
 
             savedStatement = await statementRepository.InsertStatementAsync(
                 MapToDataStatement(TestUserId, result, sourceDocumentSha256));
@@ -181,8 +376,6 @@ public class Tests
             await processingRepository.FailAsync(audit.Id, exception);
             throw;
         }
-
-        LogExtractedStatement(result);
         
         using (Assert.EnterMultipleScope())
         {
@@ -207,6 +400,13 @@ public class Tests
                 stmt.NetNewSpending,
                 Is.EqualTo(stmt.TotalPurchases - stmt.TotalOtherCredits));
             Assert.That(savedStatement.Id, Is.GreaterThan(0));
+            Assert.That(
+                savedStatement.CreatedBy,
+                Is.EqualTo(checked((int)TestUserId)));
+            Assert.That(
+                savedStatement.Transactions.All(transaction =>
+                    transaction.CreatedBy == checked((int)TestUserId)),
+                Is.True);
             Assert.That(audit.StatementId, Is.EqualTo(savedStatement.Id));
             Assert.That(audit.Filename, Is.EqualTo(Path.GetFileName(pdfPath)));
             Assert.That(audit.StatusId, Is.EqualTo(StatusCatalog.SuccessId));
@@ -217,18 +417,20 @@ public class Tests
     public async Task SanitizePiiAsync_PdfWithoutDetectedPii_StillReturnsImageOnlyPdf()
     {
         var pdfPath = FindRepositoryFile("Test", "Synchrony-Amazon.pdf");
+        
         var testFolder = Path.GetDirectoryName(pdfPath)
                          ?? throw new DirectoryNotFoundException($"Could not find test folder for '{pdfPath}'.");
         
         var originalPdf = await File.ReadAllBytesAsync(pdfPath);
-        var textExtractor = new PdfPigTextExtractor(
-            TestLogging.CreateLogger<PdfPigTextExtractor>());
+        
+        var textExtractor = new PdfPigTextExtractor(new NoOpAppLog<PdfPigTextExtractor>());
+        
         var sanitizer = new PdfPiiSanitizer(
             textExtractor,
             new StubPiiDetector(),
-            new TextPdfRedactor(TestLogging.CreateLogger<TextPdfRedactor>()),
-            new PdfRasterizer(TestLogging.CreateLogger<PdfRasterizer>()),
-            TestLogging.CreateLogger<PdfPiiSanitizer>());
+            new TextPdfRedactor(new NoOpAppLog<TextPdfRedactor>()),
+            new PdfRasterizer(new NoOpAppLog<PdfRasterizer>()),
+            new NoOpAppLog<PdfPiiSanitizer>());
 
         var result = await sanitizer.SanitizePiiAsync(
             new SanitizePiiRequest { UserId = 1, PdfData = originalPdf });
@@ -248,33 +450,7 @@ public class Tests
         }
         await WriteRepositoryFile(result.RasterizedPdfData, testFolder, "Synchrony-Amazon-Rasterized.pdf");
     }
-
-    private static void LogExtractedStatement(ExtractPdfStatementResponse result)
-    {
-        ArgumentNullException.ThrowIfNull(result);
-
-        var logger = TestLogging.CreateLogger<Tests>();
-        var statement = result.Statement!;
-
-        logger.LogInformation(
-            "Logging {TransactionCount} extracted transactions",
-            statement.Transactions.Count);
-
-        foreach (var transaction in statement.Transactions)
-        {
-            logger.LogInformation(
-                "Transaction: Date={TransactionDate}, Amount={TransactionAmount:F2}, Description={TransactionDescription}",
-                transaction.Date?.ToString("yyyy-MM-dd") ?? "Not provided",
-                transaction.Amount,
-                transaction.Description);
-        }
-
-        logger.LogInformation(
-            "Transaction total={TransactionTotal:F2}; Statement balance={StatementBalance:F2}",
-            statement.Transactions.Sum(transaction => transaction.Amount),
-            statement.NewBalance);
-    }
-
+    
     private static DataStatement MapToDataStatement(
         long userId,
         ExtractPdfStatementResponse result,
@@ -298,39 +474,35 @@ public class Tests
             TotalOtherCredits = statement.TotalOtherCredits,
             Fees = statement.Fees,
             InterestCharged = statement.InterestCharged,
-            Transactions = statement.Transactions
-                .Select(transaction => new DataTransaction
-                {
-                    TransactionDate = transaction.Date,
-                    Category = transaction.Category,
-                    Merchant = transaction.Merchant,
-                    Description = transaction.Description,
-                    Amount = transaction.Amount,
-                    IsCredit = transaction.IsCredit
-                })
-                .ToList()
+            Transactions =
+            [
+                .. statement.Transactions
+                    .Select(transaction => new DataTransaction
+                    {
+                        TransactionDate = transaction.Date,
+                        Category = transaction.Category,
+                        Merchant = transaction.Merchant,
+                        Description = transaction.Description,
+                        Amount = transaction.Amount,
+                        IsCredit = transaction.IsCredit
+                    })
+            ]
         };
     }
 
     private static string FindRepositoryFile(params string[] pathParts)
     {
         var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
-
         while (directory is not null)
         {
-            var candidate = Path.Combine(
-                [directory.FullName, .. pathParts]);
-
+            var candidate = Path.Combine([directory.FullName, .. pathParts]);
             if (File.Exists(candidate))
             {
                 return candidate;
             }
-
             directory = directory.Parent;
         }
-
-        throw new FileNotFoundException(
-            $"Could not find test PDF '{Path.Combine(pathParts)}'.");
+        throw new FileNotFoundException($"Could not find test PDF '{Path.Combine(pathParts)}'.");
     }
 
     private static async Task WriteRepositoryFile(byte[] pdfData, params string[] pathParts)
@@ -351,7 +523,6 @@ public class Tests
         public DetectPiiResponse DetectPii(DetectPiiRequest request)
         {
             ArgumentNullException.ThrowIfNull(request);
-
             return new DetectPiiResponse
             {
                 PiiItems = piiItems

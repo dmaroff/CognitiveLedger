@@ -10,9 +10,9 @@ namespace CognitiveLedger.Parser.PDF;
 
 public sealed class PdfPigTextExtractor : IPdfTextExtractor
 {
-    private readonly AppLog<PdfPigTextExtractor> _logger;
+    private readonly IAppLog<PdfPigTextExtractor> _logger;
 
-    public PdfPigTextExtractor(AppLog<PdfPigTextExtractor> logger)
+    public PdfPigTextExtractor(IAppLog<PdfPigTextExtractor> logger)
     {
         _logger = logger;
     }
@@ -52,6 +52,7 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
     {
         var sb = new StringBuilder();
         var textItems = new List<PdfTextItem>();
+        var pages = new List<PdfPageText>();
 
         foreach (var page in document.GetPages())
         {
@@ -93,14 +94,23 @@ public sealed class PdfPigTextExtractor : IPdfTextExtractor
                         .OrderBy(word => word.BoundingBox.Left)
                         .Select(word => word.Text)));
 
+            var pageText = new StringBuilder();
             foreach (var line in lines)
             {
                 sb.AppendLine(line);
+                pageText.AppendLine(line);
             }
+
+            pages.Add(new PdfPageText
+            {
+                PageNumber = page.Number,
+                Text = pageText.ToString()
+            });
         }
 
         return new ExtractPdfTextResponse
         {
+            Pages = pages,
             FullText = sb.ToString(),
             TextItems = textItems
         };

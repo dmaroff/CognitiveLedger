@@ -1,14 +1,18 @@
 using CognitiveLedger.Common.Response;
+using CognitiveLedger.Data.Repositories;
 using Microsoft.AspNetCore.Mvc;
 using CognitiveLedger.Services.Importer.Request;
 using CognitiveLedger.Services.Importer.Response;
 using CognitiveLedger.Services.Importer.Services;
+using StatusCatalog = CognitiveLedger.Data.Models.StatusCatalog;
 
 namespace CognitiveLedger.Services.Importer.Controllers;
 
 [ApiController]
 [Route("api/parse")]
-public sealed class ImportController(IImportService importService) : ControllerBase
+public sealed class ImportController(
+    IImportService importService,
+    IStatementProcessingRepository processingRepository) : ControllerBase
 {
     [HttpPost("pdf")]
     [Consumes("application/json")]
@@ -18,11 +22,6 @@ public sealed class ImportController(IImportService importService) : ControllerB
         [FromBody] ImportPdfRequest request,
         CancellationToken cancellationToken)
     {
-        if (request.BankName == string.Empty)
-        {
-            ModelState.AddModelError(nameof(request.BankName), "A non-empty bank name is required.");
-            return ValidationProblem(ModelState);
-        }
         if (request.FileName == string.Empty)
         {
             ModelState.AddModelError(nameof(request.FileName), "A non-empty file name is required.");
@@ -54,6 +53,8 @@ public sealed class ImportController(IImportService importService) : ControllerB
 
         var response = new ImportPdfResponse
         {
+            Existing = result.Existing,
+            ProcessingAuditId = result.ProcessingAuditId,
             StatementId = result.StatementId,
             Status = result.Status,
             ErrorCode = result.ErrorCode,
@@ -63,5 +64,44 @@ public sealed class ImportController(IImportService importService) : ControllerB
         return result.Status == ResponseStatus.Success
             ? Ok(response)
             : StatusCode(StatusCodes.Status501NotImplemented, response);
+    }
+
+    [HttpGet("status/{processingAuditId:long}")]
+    [ProducesResponseType(typeof(ImportStatusResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ImportStatusResponse>> GetImportStatus(
+        long processingAuditId,
+        [FromQuery] long userId,
+        CancellationToken cancellationToken)
+    {
+        if (processingAuditId <= 0 || userId <= 0)
+        {
+            return BadRequest();
+        }
+
+        var audit = await processingRepository.FindAsync(
+            processingAuditId,
+            userId,
+            cancellationToken);
+
+        if (audit is null)
+        {
+            return NotFound();
+        }
+
+        return Ok(new ImportStatusResponse
+        {
+            ProcessingAuditId = audit.Id,
+            Status = audit.StatusId switch
+            {
+                StatusCatalog.ProcessingId => ImportProcessingStatus.Processing,
+                StatusCatalog.SuccessId => ImportProcessingStatus.Succeeded,
+                StatusCatalog.FailedId => ImportProcessingStatus.Failed,
+                _ => ImportProcessingStatus.Failed
+            },
+            StatementId = audit.StatementId,
+            ExtractedTransactionCount = audit.ExtractedTransactionCount,
+            ErrorMessage = audit.ErrorMessage
+        });
     }
 }

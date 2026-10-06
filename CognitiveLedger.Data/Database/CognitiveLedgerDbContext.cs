@@ -41,7 +41,7 @@ public class CognitiveLedgerDbContext : DbContext
                 LastName = "user",
                 EmailAddress = "system@cognitiveledger.invalid",
                 CreatedAtUtc = new DateTime(2026, 9, 22, 0, 0, 0, DateTimeKind.Utc),
-                CreatedBy = "system",
+                CreatedBy = 1,
                 IsActive = true,
                 IsDeleted = false
             });

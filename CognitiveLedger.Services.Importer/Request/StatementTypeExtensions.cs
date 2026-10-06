@@ -1,4 +1,5 @@
 using CognitiveLedger.Common.Types;
+using CognitiveLedger.Statements.Abstractions;
 
 namespace CognitiveLedger.Services.Importer.Request;
 
@@ -15,4 +16,16 @@ public static class StatementTypeExtensions
         StatementType.Other => StatementTypeCatalog.OtherCode,
         _ => throw new ArgumentOutOfRangeException(nameof(statementType), statementType, "Unsupported statement type.")
     };
+
+    public static StatementKind ToStatementKind(this StatementType statementType) =>
+        statementType switch
+        {
+            StatementType.BankAccount => StatementKind.BankAccount,
+            StatementType.CreditCard => StatementKind.CreditCard,
+            StatementType.RetailAccount => StatementKind.RetailAccount,
+            StatementType.MedicalBill => StatementKind.MedicalBill,
+            StatementType.UtilityBill => StatementKind.UtilityBill,
+            StatementType.Other => StatementKind.Other,
+            _ => StatementKind.Unknown
+        };
 }

@@ -9,6 +9,7 @@ public sealed class ImportRequest : RequestBase
     public byte[] FileData { get; private init; } = [];
     public string FileName { get; private init; } = string.Empty;
     public string SourceName { get; private init; } = string.Empty;
+    public string? StatementDefinitionKey { get; private init; }
     public StatementType StatementType { get; private init; } = StatementType.Unknown;
     
     public static explicit operator ImportRequest(ImportPdfRequest request) 
@@ -23,6 +24,7 @@ public sealed class ImportRequest : RequestBase
             FileType = ImportFileType.Pdf, 
             FileName = request.FileName, 
             SourceName = request.BankName, 
+            StatementDefinitionKey = request.StatementDefinitionKey,
             StatementType = request.StatementType, 
             FileData = Convert.FromBase64String(request.Base64PdfData)
         }; 
@@ -39,9 +41,28 @@ public sealed class ImportRequest : RequestBase
             
             FileName = request.FileName, 
             BankName = request.SourceName, 
+            StatementDefinitionKey = request.StatementDefinitionKey,
             StatementType = request.StatementType, 
             Base64PdfData = Convert.ToBase64String(request.FileData)
         }; 
+    }
+
+    public ImportRequest WithStatementDefinitionKey(string statementDefinitionKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(statementDefinitionKey);
+
+        return new ImportRequest
+        {
+            RequestId = RequestId,
+            CreatedDate = CreatedDate,
+            UserId = UserId,
+            FileType = FileType,
+            FileData = FileData,
+            FileName = FileName,
+            SourceName = SourceName,
+            StatementDefinitionKey = statementDefinitionKey,
+            StatementType = StatementType
+        };
     }
 
     public override string ToString()
@@ -53,6 +74,7 @@ public sealed class ImportRequest : RequestBase
                $"FileType={FileType}, " +
                $"FileName={FileName}, " +
                $"SourceName={SourceName}, " +
+               $"StatementDefinitionKey={StatementDefinitionKey}, " +
                $"StatementType={StatementType}, " +
                $"FileDataLength={FileData.Length}";
     }

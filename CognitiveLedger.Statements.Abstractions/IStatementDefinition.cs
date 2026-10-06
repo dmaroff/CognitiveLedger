@@ -1,8 +1,8 @@
-namespace CognitiveLedger.AI.OpenAI.Request;
+namespace CognitiveLedger.Statements.Abstractions;
 
-public interface IExtractPdfStatementRequest
+public interface IStatementDefinition
 {
-    byte[] PdfData { get; set; }
+    StatementDefinitionDescriptor Descriptor { get; }
 
     string SummaryPrompt { get; }
 

@@ -14,14 +14,8 @@ public sealed class SanitizePiiRequest : RequestBase
     public required byte[] PdfData { get; init; }
 
     /// <summary>
-    /// Optional explicit values to find case-insensitively and redact wherever
-    /// they occur. When supplied, automatic PII detection is bypassed.
-    /// </summary>
-    public IList<string> PiiValues { get; init; } = [];
-
-    /// <summary>
     /// Text values to replace in the PDF before it is rasterized and sent to
-    /// an external service.
+    /// an external service. When supplied, automatic PII detection is bypassed.
     /// </summary>
     public IList<PdfTextReplacement> Replacements { get; init; } = [];
 }
